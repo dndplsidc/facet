@@ -266,15 +266,17 @@ type mockPiManager struct {
 	applyPrev     *pi.PiState
 	applyResult   *pi.PiState
 	applyErr      error
+	applyOpts     pi.ApplyOptions
 	unapplyCalled bool
 	unapplyPrev   *pi.PiState
 	unapplyErr    error
 }
 
-func (m *mockPiManager) Apply(config *pi.Config, previousState *pi.PiState) (*pi.PiState, error) {
+func (m *mockPiManager) Apply(config *pi.Config, previousState *pi.PiState, opts pi.ApplyOptions) (*pi.PiState, error) {
 	m.applyCalled = true
 	m.applyConfig = config
 	m.applyPrev = previousState
+	m.applyOpts = opts
 	return m.applyResult, m.applyErr
 }
 
@@ -326,6 +328,33 @@ func TestApply_WithPiExtensions(t *testing.T) {
 	require.NotNil(t, stateStore.written.AI)
 	require.NotNil(t, stateStore.written.AI.Pi)
 	assert.Equal(t, []string{"pi-lens"}, stateStore.written.AI.Pi.Extensions)
+	assert.False(t, piMgr.applyOpts.Force)
+}
+
+func TestApply_ForcePassesPiForceOption(t *testing.T) {
+	cfgDir := t.TempDir()
+	stateDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(stateDir, ".local.yaml"), []byte(""), 0o644))
+
+	piMgr := &mockPiManager{applyResult: &pi.PiState{Extensions: []string{"pi-lens"}}}
+	stateStore := &mockStateStore{}
+	baseCfg := &profile.FacetConfig{}
+	loader := &mockLoader{meta: &profile.FacetMeta{}, configs: map[string]*profile.FacetConfig{
+		filepath.Join(cfgDir, "base.yaml"): baseCfg,
+		filepath.Join(cfgDir, "profiles", "work.yaml"): {
+			Extends: "base",
+			AI:      &profile.AIConfig{Pi: &profile.PiConfig{Extensions: []string{"pi-lens"}}},
+		},
+		filepath.Join(stateDir, ".local.yaml"): {},
+	}}
+
+	a := New(Deps{Reporter: &mockReporter{}, Loader: loader, BaseResolver: newStaticBaseResolver(baseCfg), Installer: &mockInstaller{}, StateStore: stateStore, PiManager: piMgr, DeployerFactory: func(configDir, homeDir string, vars map[string]any, ownedConfigs []deploy.ConfigResult) deploy.Service {
+		return &mockDeployer{}
+	}, OSName: "macos"})
+
+	require.NoError(t, a.Apply("work", ApplyOpts{ConfigDir: cfgDir, StateDir: stateDir, Force: true}))
+	assert.True(t, piMgr.applyCalled)
+	assert.True(t, piMgr.applyOpts.Force)
 }
 
 func TestApply_SameProfileRemovalOfPiSectionReconcilesPreviousState(t *testing.T) {

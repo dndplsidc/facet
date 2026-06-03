@@ -427,7 +427,7 @@ func (a *App) Apply(profileName string, opts ApplyOpts) (applyErr error) {
 		}
 		if a.piManager != nil && (effectivePi != nil || prevPiState != nil) {
 			var piErr error
-			piState, piErr = a.piManager.Apply(effectivePi, prevPiState)
+			piState, piErr = a.piManager.Apply(effectivePi, prevPiState, pi.ApplyOptions{Force: opts.Force})
 			if piErr != nil {
 				a.reporter.Error(fmt.Sprintf("Pi extensions failed: %v", piErr))
 				if aiErr == nil {

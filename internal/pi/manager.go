@@ -17,6 +17,11 @@ type Reporter interface {
 	Warning(msg string)
 }
 
+// ApplyOptions controls Pi extension reconciliation behavior.
+type ApplyOptions struct {
+	Force bool
+}
+
 // Manager reconciles Pi extension state.
 type Manager struct {
 	runner   CommandRunner
@@ -27,7 +32,7 @@ func NewManager(runner CommandRunner, reporter Reporter) *Manager {
 	return &Manager{runner: runner, reporter: reporter}
 }
 
-func (m *Manager) Apply(config *Config, previousState *PiState) (*PiState, error) {
+func (m *Manager) Apply(config *Config, previousState *PiState, opts ApplyOptions) (*PiState, error) {
 	current := make(map[string]struct{})
 	if config != nil {
 		for _, ext := range config.Extensions {
@@ -38,8 +43,10 @@ func (m *Manager) Apply(config *Config, previousState *PiState) (*PiState, error
 		}
 	}
 
+	previous := make(map[string]struct{})
 	if previousState != nil {
 		for _, ext := range previousState.Extensions {
+			previous[ext] = struct{}{}
 			if _, keep := current[ext]; keep {
 				continue
 			}
@@ -58,6 +65,10 @@ func (m *Manager) Apply(config *Config, previousState *PiState) (*PiState, error
 	extensions := sortedKeys(current)
 	state := &PiState{}
 	for _, ext := range extensions {
+		if _, alreadyManaged := previous[ext]; alreadyManaged && !opts.Force {
+			state.Extensions = append(state.Extensions, ext)
+			continue
+		}
 		if err := m.runner.Run("pi", "extension", "install", ext); err != nil {
 			m.reporter.Warning(fmt.Sprintf("failed to install Pi extension %q: %v", ext, err))
 			continue

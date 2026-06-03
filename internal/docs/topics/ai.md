@@ -31,10 +31,12 @@ ai:
 ```
 
 Pi extensions are reconciled during the `ai` apply stage. Facet installs declared
-extensions with `pi extension install <name>` and removes only previously
-Facet-managed extensions that are no longer declared. Manually installed Pi
-extensions are left untouched. `ai.pi` may be used without `ai.agents` when no
-agent-scoped permissions, skills, or MCPs are configured.
+extensions with `pi extension install <name>` only when they were not already
+recorded in Facet state, and removes only previously Facet-managed extensions
+that are no longer declared. Manually installed Pi extensions are left untouched.
+Use `facet apply --force` to reinstall unchanged managed Pi extensions. `ai.pi`
+may be used without `ai.agents` when no agent-scoped permissions, skills, or MCPs
+are configured.
 
 ## Permissions
 

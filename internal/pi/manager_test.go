@@ -37,15 +37,40 @@ type mockReporter struct {
 func (m *mockReporter) Success(msg string) { m.success = append(m.success, msg) }
 func (m *mockReporter) Warning(msg string) { m.warnings = append(m.warnings, msg) }
 
-func TestManagerApply_InstallsCurrentAndRemovesOrphans(t *testing.T) {
+func TestManagerApply_InstallsNewCurrentAndRemovesOrphans(t *testing.T) {
 	runner := &mockRunner{fail: map[string]error{}}
 	mgr := NewManager(runner, &mockReporter{})
 
-	state, err := mgr.Apply(&Config{Extensions: []string{"pi-lens", "pi-subagents"}}, &PiState{Extensions: []string{"pi-lens", "old-ext"}})
+	state, err := mgr.Apply(&Config{Extensions: []string{"pi-lens", "pi-subagents"}}, &PiState{Extensions: []string{"pi-lens", "old-ext"}}, ApplyOptions{})
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{
 		"pi extension remove old-ext",
+		"pi extension install pi-subagents",
+	}, runner.commands)
+	assert.Equal(t, []string{"pi-lens", "pi-subagents"}, state.Extensions)
+}
+
+func TestManagerApply_SkipsUnchangedExtensionsAndPreservesState(t *testing.T) {
+	runner := &mockRunner{fail: map[string]error{}}
+	mgr := NewManager(runner, &mockReporter{})
+
+	state, err := mgr.Apply(&Config{Extensions: []string{"pi-lens", "pi-subagents"}}, &PiState{Extensions: []string{"pi-lens", "pi-subagents"}}, ApplyOptions{})
+	require.NoError(t, err)
+
+	assert.Empty(t, runner.commands)
+	require.NotNil(t, state)
+	assert.Equal(t, []string{"pi-lens", "pi-subagents"}, state.Extensions)
+}
+
+func TestManagerApply_ForceReinstallsUnchangedExtensions(t *testing.T) {
+	runner := &mockRunner{fail: map[string]error{}}
+	mgr := NewManager(runner, &mockReporter{})
+
+	state, err := mgr.Apply(&Config{Extensions: []string{"pi-lens", "pi-subagents"}}, &PiState{Extensions: []string{"pi-lens"}}, ApplyOptions{Force: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{
 		"pi extension install pi-lens",
 		"pi extension install pi-subagents",
 	}, runner.commands)
@@ -59,7 +84,7 @@ func TestManagerApply_RecordsOnlySuccessfulInstalls(t *testing.T) {
 	reporter := &mockReporter{}
 	mgr := NewManager(runner, reporter)
 
-	state, err := mgr.Apply(&Config{Extensions: []string{"ok-ext", "broken-ext"}}, nil)
+	state, err := mgr.Apply(&Config{Extensions: []string{"ok-ext", "broken-ext"}}, nil, ApplyOptions{})
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{"ok-ext"}, state.Extensions)
@@ -70,7 +95,7 @@ func TestManagerApply_NilConfigRemovesPreviousManagedExtensions(t *testing.T) {
 	runner := &mockRunner{fail: map[string]error{}}
 	mgr := NewManager(runner, &mockReporter{})
 
-	state, err := mgr.Apply(nil, &PiState{Extensions: []string{"pi-lens"}})
+	state, err := mgr.Apply(nil, &PiState{Extensions: []string{"pi-lens"}}, ApplyOptions{})
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{"pi extension remove pi-lens"}, runner.commands)
