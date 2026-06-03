@@ -363,7 +363,7 @@ Running `facet apply <same-profile>` just applies — overwrites configs to conv
 
 ### --force flag
 
-`--force` = unapply + apply, even for the same profile. Gives a clean slate. Also skips user prompts for conflicting files (replaces without asking, but still logs).
+`--force` = unapply + apply, even for the same profile. Gives a clean slate. Also skips user prompts for conflicting files (replaces without asking, but still logs). For managed Pi extensions, `--force` also reinstalls declared extensions that normal apply would skip as already managed.
 
 ### --dry-run flag
 
@@ -474,9 +474,11 @@ Falls back to plain text if the terminal doesn't support colors.
 ## 11. Pi Extensions
 
 `facet apply` reconciles Pi coding-agent extensions from `ai.pi.extensions`.
-Each declared extension is installed with `pi extension install <name>`, and
-previously managed extensions that are no longer declared are removed with
-`pi extension remove <name>`.
+Newly declared extensions are installed with `pi extension install <name>`.
+Declared extensions already recorded in Facet state are not reinstalled during a
+normal apply; `facet apply --force` reinstalls them. Previously managed
+extensions that are no longer declared are removed with `pi extension remove
+<name>`.
 
 Removal is state-scoped: Facet only removes extensions recorded in its own
 `.state.json`; manually installed Pi extensions are left untouched. Pi extension

@@ -62,7 +62,7 @@ type AIOrchestrator interface {
 
 // PiManager handles Pi extension lifecycle.
 type PiManager interface {
-	Apply(config *pi.Config, previousState *pi.PiState) (*pi.PiState, error)
+	Apply(config *pi.Config, previousState *pi.PiState, opts pi.ApplyOptions) (*pi.PiState, error)
 	Unapply(previousState *pi.PiState) error
 }
 

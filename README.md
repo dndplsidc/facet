@@ -211,9 +211,10 @@ ai:
       - pi-subagents
 ```
 
-During the `ai` apply stage, Facet installs declared extensions and removes only
-those previously managed by Facet that are no longer declared. Manually installed
-Pi extensions are not touched.
+During the `ai` apply stage, Facet installs declared extensions that were not
+already recorded in Facet state and removes only those previously managed by
+Facet that are no longer declared. Manually installed Pi extensions are not
+touched. Use `facet apply --force` to reinstall unchanged managed Pi extensions.
 
 ## AI Configuration
 
@@ -262,7 +263,7 @@ The main event. Resolves the base from `extends`, merges layers, deploys configs
 ```sh
 facet apply work
 facet apply work --dry-run         # preview what would happen, no side effects
-facet apply work --force           # overwrite conflicting unmanaged files
+facet apply work --force           # overwrite conflicts and reinstall unchanged Pi extensions
 facet apply work --verbose         # stream stage, item, and duration diagnostics
 facet apply work --skip-failure    # warn on deploy errors instead of rolling back
 facet apply work --stages configs,packages  # run only specific stages

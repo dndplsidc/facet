@@ -58,8 +58,9 @@ facet_apply work
 assert_file_contains "$HOME/.mock-pi" "pi extension remove @gotgenes/pi-session-tools"
 assert_file_contains "$HOME/.mock-pi" "pi extension remove pi-interactive-shell"
 assert_file_contains "$HOME/.mock-pi" "pi extension remove pi-subagents"
-assert_file_contains "$HOME/.mock-pi" "pi extension install pi-lens"
-echo "  removed only previously managed undeclared extensions"
+assert_file_not_contains "$HOME/.mock-pi" "pi extension install pi-lens"
+assert_json_field "$HOME/.facet/.state.json" '.ai.pi.extensions[0]' 'pi-lens'
+echo "  removed only previously managed undeclared extensions and skipped unchanged install"
 
 : > "$HOME/.mock-pi"
 facet -c "$HOME/dotfiles" -s "$HOME/.facet" apply work --stages packages
@@ -72,8 +73,18 @@ echo "  --stages packages skips ai pi extensions"
 
 : > "$HOME/.mock-pi"
 facet -c "$HOME/dotfiles" -s "$HOME/.facet" apply work --stages ai
+if [ -s "$HOME/.mock-pi" ]; then
+    echo "  ASSERT FAIL: unchanged --stages ai should not reinstall Pi extensions"
+    cat "$HOME/.mock-pi"
+    exit 1
+fi
+echo "  --stages ai skips unchanged pi extensions"
+
+: > "$HOME/.mock-pi"
+facet -c "$HOME/dotfiles" -s "$HOME/.facet" apply work --stages ai --force
+assert_file_contains "$HOME/.mock-pi" "pi extension remove pi-lens"
 assert_file_contains "$HOME/.mock-pi" "pi extension install pi-lens"
-echo "  --stages ai runs pi extension reconciliation"
+echo "  --force reinstalls unchanged pi extensions"
 
 output=$(facet -c "$HOME/dotfiles" -s "$HOME/.facet" apply --dry-run work 2>&1)
 echo "$output" | grep -q "AI Pi extensions" || { echo "  ASSERT FAIL: dry-run should show AI Pi extensions"; echo "$output"; exit 1; }
