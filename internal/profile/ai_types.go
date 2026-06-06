@@ -11,7 +11,13 @@ type AIConfig struct {
 
 // PiConfig holds Pi-specific AI tooling configuration.
 type PiConfig struct {
-	Extensions []string `yaml:"extensions,omitempty"`
+	Extensions []PiExtensionEntry `yaml:"extensions,omitempty"`
+}
+
+// PiExtensionEntry describes one Pi package managed by Facet.
+type PiExtensionEntry struct {
+	Source     string            `yaml:"source"`
+	InstallEnv map[string]string `yaml:"install_env,omitempty"`
 }
 
 // PermissionsConfig defines allow/deny lists for AI agent tool permissions.

@@ -144,29 +144,47 @@ func mergePi(base, overlay *PiConfig) *PiConfig {
 		return nil
 	}
 	result := &PiConfig{}
-	seen := make(map[string]struct{})
+	seen := make(map[string]int)
 	for _, ext := range appendPiExtensions(nil, base) {
-		if _, ok := seen[ext]; ok {
+		if ext.Source == "" {
 			continue
 		}
-		seen[ext] = struct{}{}
-		result.Extensions = append(result.Extensions, ext)
+		if _, ok := seen[ext.Source]; ok {
+			continue
+		}
+		seen[ext.Source] = len(result.Extensions)
+		result.Extensions = append(result.Extensions, clonePiExtensionEntry(ext))
 	}
 	for _, ext := range appendPiExtensions(nil, overlay) {
-		if _, ok := seen[ext]; ok {
+		if ext.Source == "" {
 			continue
 		}
-		seen[ext] = struct{}{}
-		result.Extensions = append(result.Extensions, ext)
+		if idx, ok := seen[ext.Source]; ok {
+			result.Extensions[idx] = clonePiExtensionEntry(ext)
+			continue
+		}
+		seen[ext.Source] = len(result.Extensions)
+		result.Extensions = append(result.Extensions, clonePiExtensionEntry(ext))
 	}
 	return result
 }
 
-func appendPiExtensions(dst []string, cfg *PiConfig) []string {
+func appendPiExtensions(dst []PiExtensionEntry, cfg *PiConfig) []PiExtensionEntry {
 	if cfg == nil {
 		return dst
 	}
 	return append(dst, cfg.Extensions...)
+}
+
+func clonePiExtensionEntry(src PiExtensionEntry) PiExtensionEntry {
+	result := PiExtensionEntry{Source: src.Source}
+	if src.InstallEnv != nil {
+		result.InstallEnv = make(map[string]string, len(src.InstallEnv))
+		for k, v := range src.InstallEnv {
+			result.InstallEnv[k] = v
+		}
+	}
+	return result
 }
 
 func mergeScripts(base, overlay []ScriptEntry) []ScriptEntry {

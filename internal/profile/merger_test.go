@@ -285,15 +285,25 @@ func TestMerge_ScriptsDeepCopy(t *testing.T) {
 	assert.Equal(t, "echo overlay", overlay.PreApply[0].Run)
 }
 
-func TestMergeAIPiExtensions_UnionsByName(t *testing.T) {
-	base := &FacetConfig{AI: &AIConfig{Pi: &PiConfig{Extensions: []string{"pi-lens", "pi-subagents"}}}}
-	overlay := &FacetConfig{AI: &AIConfig{Pi: &PiConfig{Extensions: []string{"pi-subagents", "@gotgenes/pi-session-tools"}}}}
+func TestMergeAIPiExtensions_UnionsBySourceAndOverlayReplacesEntry(t *testing.T) {
+	base := &FacetConfig{AI: &AIConfig{Pi: &PiConfig{Extensions: []PiExtensionEntry{
+		{Source: "pi-lens"},
+		{Source: "pi-subagents", InstallEnv: map[string]string{"NPM_CONFIG_REGISTRY": "https://registry.example.com"}},
+	}}}}
+	overlay := &FacetConfig{AI: &AIConfig{Pi: &PiConfig{Extensions: []PiExtensionEntry{
+		{Source: "pi-subagents"},
+		{Source: "@gotgenes/pi-session-tools"},
+	}}}}
 
 	merged, err := Merge(base, overlay)
 	require.NoError(t, err)
 	require.NotNil(t, merged.AI)
 	require.NotNil(t, merged.AI.Pi)
-	assert.Equal(t, []string{"pi-lens", "pi-subagents", "@gotgenes/pi-session-tools"}, merged.AI.Pi.Extensions)
+	assert.Equal(t, []PiExtensionEntry{
+		{Source: "pi-lens"},
+		{Source: "pi-subagents"},
+		{Source: "@gotgenes/pi-session-tools"},
+	}, merged.AI.Pi.Extensions)
 }
 
 func TestMergeAIPi_NilWhenAbsent(t *testing.T) {

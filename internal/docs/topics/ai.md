@@ -25,16 +25,19 @@ Manage Pi coding-agent extensions under `ai.pi.extensions`:
 ai:
   pi:
     extensions:
-      - pi-interactive-shell
-      - pi-lens
-      - pi-subagents
+      - source: npm:pi-intercom
+      - source: npm:@company/internal-pi-extension
+        install_env:
+          NPM_CONFIG_REGISTRY: https://bnpm.byted.org
 ```
 
 Pi extensions are reconciled during the `ai` apply stage. Facet installs declared
-extensions with `pi extension install <name>` only when they were not already
-recorded in Facet state, and removes only previously Facet-managed extensions
-that are no longer declared. Manually installed Pi extensions are left untouched.
-Use `facet apply --force` to reinstall unchanged managed Pi extensions. `ai.pi`
+extensions with `pi install <source>` only when they were not already recorded in
+Facet state, and removes previously Facet-managed extensions that are no longer
+declared with `pi remove <source>`. Optional per-extension `install_env` values
+are passed only to that extension's install command. Manually installed Pi
+extensions are left untouched. Use `facet apply --force` to reinstall unchanged
+managed Pi extensions. `ai.pi`
 may be used without `ai.agents` when no agent-scoped permissions, skills, or MCPs
 are configured.
 

@@ -105,22 +105,25 @@ touch "$MOCK_PI_EXTENSIONS"
 
 echo "pi $*" >> "$MOCK_PI_LOG"
 
-if [ "$1" = "extension" ] && [ "$2" = "install" ]; then
-    name="$3"
+if [ "$1" = "install" ]; then
+    name="$2"
+    if [ -n "${NPM_CONFIG_REGISTRY:-}" ]; then
+        echo "pi install env NPM_CONFIG_REGISTRY=$NPM_CONFIG_REGISTRY" >> "$MOCK_PI_LOG"
+    fi
     grep -qx "$name" "$MOCK_PI_EXTENSIONS" 2>/dev/null || echo "$name" >> "$MOCK_PI_EXTENSIONS"
-    echo "mock-pi: extension install $name"
+    echo "mock-pi: install $name"
     exit 0
 fi
 
-if [ "$1" = "extension" ] && [ "$2" = "remove" ]; then
-    name="$3"
+if [ "$1" = "remove" ]; then
+    name="$2"
     grep -vx "$name" "$MOCK_PI_EXTENSIONS" > "$MOCK_PI_EXTENSIONS.tmp" || true
     mv "$MOCK_PI_EXTENSIONS.tmp" "$MOCK_PI_EXTENSIONS"
-    echo "mock-pi: extension remove $name"
+    echo "mock-pi: remove $name"
     exit 0
 fi
 
-if [ "$1" = "extension" ] && [ "$2" = "list" ]; then
+if [ "$1" = "list" ]; then
     cat "$MOCK_PI_EXTENSIONS"
     exit 0
 fi

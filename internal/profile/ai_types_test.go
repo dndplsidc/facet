@@ -52,7 +52,9 @@ mcps:
       - /tmp
 pi:
   extensions:
-    - pi-lens
+    - source: pi-lens
+      install_env:
+        NPM_CONFIG_REGISTRY: https://registry.example.com
 `
 	var cfg AIConfig
 	err := yaml.Unmarshal([]byte(input), &cfg)
@@ -79,7 +81,22 @@ pi:
 	require.Len(t, cfg.MCPs, 2)
 	assert.Equal(t, "playwright", cfg.MCPs[0].Name)
 	require.NotNil(t, cfg.Pi)
-	assert.Equal(t, []string{"pi-lens"}, cfg.Pi.Extensions)
+	assert.Equal(t, []PiExtensionEntry{{
+		Source:     "pi-lens",
+		InstallEnv: map[string]string{"NPM_CONFIG_REGISTRY": "https://registry.example.com"},
+	}}, cfg.Pi.Extensions)
+}
+
+func TestAIConfig_UnmarshalYAML_PiExtensionStringIsInvalid(t *testing.T) {
+	input := `
+pi:
+  extensions:
+    - pi-lens
+`
+	var cfg AIConfig
+	err := yaml.Unmarshal([]byte(input), &cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot unmarshal")
 }
 
 func TestAIConfig_UnmarshalYAML_Empty(t *testing.T) {
