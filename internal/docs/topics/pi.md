@@ -15,10 +15,10 @@ ai:
 
 ## Behavior
 
-Facet installs newly declared extensions with:
+Facet installs newly declared extensions with the current Pi package command:
 
 ```sh
-pi extension install <name>
+pi install <name>
 ```
 
 If a declared extension is already recorded in Facet state, normal `facet apply`
@@ -29,7 +29,7 @@ Facet removes only extensions that were previously managed by Facet and are no
 longer declared in the resolved `ai.pi.extensions` config:
 
 ```sh
-pi extension remove <name>
+pi remove <name>
 ```
 
 Manually installed Pi extensions are left untouched.

@@ -50,7 +50,7 @@ func (m *Manager) Apply(config *Config, previousState *PiState, opts ApplyOption
 			if _, keep := current[ext]; keep {
 				continue
 			}
-			if err := m.runner.Run("pi", "extension", "remove", ext); err != nil {
+			if err := m.runner.Run("pi", "remove", ext); err != nil {
 				m.reporter.Warning(fmt.Sprintf("failed to remove Pi extension %q: %v", ext, err))
 			} else {
 				m.reporter.Success(fmt.Sprintf("removed Pi extension %s", ext))
@@ -69,7 +69,7 @@ func (m *Manager) Apply(config *Config, previousState *PiState, opts ApplyOption
 			state.Extensions = append(state.Extensions, ext)
 			continue
 		}
-		if err := m.runner.Run("pi", "extension", "install", ext); err != nil {
+		if err := m.runner.Run("pi", "install", ext); err != nil {
 			m.reporter.Warning(fmt.Sprintf("failed to install Pi extension %q: %v", ext, err))
 			continue
 		}
@@ -87,7 +87,7 @@ func (m *Manager) Unapply(previousState *PiState) error {
 		return nil
 	}
 	for _, ext := range previousState.Extensions {
-		if err := m.runner.Run("pi", "extension", "remove", ext); err != nil {
+		if err := m.runner.Run("pi", "remove", ext); err != nil {
 			m.reporter.Warning(fmt.Sprintf("failed to remove Pi extension %q: %v", ext, err))
 			continue
 		}

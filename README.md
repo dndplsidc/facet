@@ -211,10 +211,11 @@ ai:
       - pi-subagents
 ```
 
-During the `ai` apply stage, Facet installs declared extensions that were not
-already recorded in Facet state and removes only those previously managed by
-Facet that are no longer declared. Manually installed Pi extensions are not
-touched. Use `facet apply --force` to reinstall unchanged managed Pi extensions.
+During the `ai` apply stage, Facet installs declared extensions with `pi install`
+when they were not already recorded in Facet state and removes previously managed
+extensions with `pi remove` when they are no longer declared. Manually installed
+Pi extensions are not touched. Use `facet apply --force` to reinstall unchanged
+managed Pi extensions.
 
 ## AI Configuration
 
