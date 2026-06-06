@@ -330,23 +330,40 @@ func TestResolve_AI_PermissionsDeepCopied(t *testing.T) {
 
 func TestResolveAIPiExtensions_SubstitutesVariables(t *testing.T) {
 	cfg := &FacetConfig{
-		Vars: map[string]any{"pi_ext": "pi-lens"},
-		AI:   &AIConfig{Pi: &PiConfig{Extensions: []string{"${facet:pi_ext}", "pi-subagents"}}},
+		Vars: map[string]any{"pi_ext": "pi-lens", "registry": "https://registry.example.com"},
+		AI: &AIConfig{Pi: &PiConfig{Extensions: []PiExtensionEntry{
+			{Source: "${facet:pi_ext}", InstallEnv: map[string]string{"NPM_CONFIG_REGISTRY": "${facet:registry}"}},
+			{Source: "pi-subagents"},
+		}}},
 	}
 
 	resolved, err := Resolve(cfg)
 	require.NoError(t, err)
 	require.NotNil(t, resolved.AI)
 	require.NotNil(t, resolved.AI.Pi)
-	assert.Equal(t, []string{"pi-lens", "pi-subagents"}, resolved.AI.Pi.Extensions)
+	assert.Equal(t, []PiExtensionEntry{
+		{Source: "pi-lens", InstallEnv: map[string]string{"NPM_CONFIG_REGISTRY": "https://registry.example.com"}},
+		{Source: "pi-subagents"},
+	}, resolved.AI.Pi.Extensions)
 }
 
 func TestResolveAIPiExtensions_UndefinedVariableErrors(t *testing.T) {
-	cfg := &FacetConfig{AI: &AIConfig{Pi: &PiConfig{Extensions: []string{"${facet:missing}"}}}}
+	cfg := &FacetConfig{AI: &AIConfig{Pi: &PiConfig{Extensions: []PiExtensionEntry{{Source: "${facet:missing}"}}}}}
 
 	_, err := Resolve(cfg)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "ai.pi.extensions[0]")
+	assert.Contains(t, err.Error(), "ai.pi.extensions[0].source")
+}
+
+func TestResolveAIPiExtensionInstallEnv_UndefinedVariableErrors(t *testing.T) {
+	cfg := &FacetConfig{AI: &AIConfig{Pi: &PiConfig{Extensions: []PiExtensionEntry{{
+		Source:     "pi-lens",
+		InstallEnv: map[string]string{"NPM_CONFIG_REGISTRY": "${facet:missing}"},
+	}}}}}
+
+	_, err := Resolve(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ai.pi.extensions[0].install_env.NPM_CONFIG_REGISTRY")
 }
 
 func TestResolve_PreApplyScriptVars(t *testing.T) {

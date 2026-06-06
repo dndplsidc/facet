@@ -107,6 +107,9 @@ echo "pi $*" >> "$MOCK_PI_LOG"
 
 if [ "$1" = "install" ]; then
     name="$2"
+    if [ -n "${NPM_CONFIG_REGISTRY:-}" ]; then
+        echo "pi install env NPM_CONFIG_REGISTRY=$NPM_CONFIG_REGISTRY" >> "$MOCK_PI_LOG"
+    fi
     grep -qx "$name" "$MOCK_PI_EXTENSIONS" 2>/dev/null || echo "$name" >> "$MOCK_PI_EXTENSIONS"
     echo "mock-pi: install $name"
     exit 0

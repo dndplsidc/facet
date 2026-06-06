@@ -474,10 +474,13 @@ Falls back to plain text if the terminal doesn't support colors.
 ## 11. Pi Extensions
 
 `facet apply` reconciles Pi coding-agent extensions from `ai.pi.extensions`.
-Newly declared extensions are installed with `pi install <name>`. Declared
-extensions already recorded in Facet state are not reinstalled during a normal
-apply; `facet apply --force` reinstalls them. Previously managed extensions that
-are no longer declared are removed with `pi remove <name>`.
+Each extension entry is an object with a required `source` and optional
+`install_env` map. Newly declared extensions are installed with `pi install
+<source>`. If `install_env` is present, those environment values are passed only
+to that extension's install command. Declared extensions already recorded in
+Facet state are not reinstalled during a normal apply; `facet apply --force`
+reinstalls them. Previously managed extensions that are no longer declared are
+removed with `pi remove <source>`.
 
 Removal is state-scoped: Facet only removes extensions recorded in its own
 `.state.json`; manually installed Pi extensions are left untouched. Pi extension

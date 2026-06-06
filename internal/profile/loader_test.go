@@ -61,15 +61,15 @@ func TestLoadConfig_WithAIPiExtensions(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte(`ai:
   pi:
     extensions:
-      - pi-interactive-shell
-      - "@gotgenes/pi-session-tools"
+      - source: pi-interactive-shell
+      - source: "@gotgenes/pi-session-tools"
 `), 0o644))
 
 	cfg, err := NewLoader().LoadConfig(path)
 	require.NoError(t, err)
 	require.NotNil(t, cfg.AI)
 	require.NotNil(t, cfg.AI.Pi)
-	assert.Equal(t, []string{"pi-interactive-shell", "@gotgenes/pi-session-tools"}, cfg.AI.Pi.Extensions)
+	assert.Equal(t, []PiExtensionEntry{{Source: "pi-interactive-shell"}, {Source: "@gotgenes/pi-session-tools"}}, cfg.AI.Pi.Extensions)
 }
 
 func TestLoadConfig_Profile_ExtendsBase(t *testing.T) {
@@ -167,10 +167,20 @@ func TestValidateProfile_AIEmptyAgentsWithAgentScopedConfig(t *testing.T) {
 func TestValidateProfile_AIPiWithoutAgents(t *testing.T) {
 	cfg := &FacetConfig{
 		Extends: "base",
-		AI:      &AIConfig{Pi: &PiConfig{Extensions: []string{"pi-lens"}}},
+		AI:      &AIConfig{Pi: &PiConfig{Extensions: []PiExtensionEntry{{Source: "pi-lens"}}}},
 	}
 	err := ValidateMergedConfig(cfg)
 	assert.NoError(t, err)
+}
+
+func TestValidateMergedConfig_AIPiExtensionRequiresSource(t *testing.T) {
+	cfg := &FacetConfig{
+		Extends: "base",
+		AI:      &AIConfig{Pi: &PiConfig{Extensions: []PiExtensionEntry{{InstallEnv: map[string]string{"NPM_CONFIG_REGISTRY": "https://registry.example.com"}}}}},
+	}
+	err := ValidateMergedConfig(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ai.pi.extensions[0].source")
 }
 
 func TestValidateProfile_AIPermissionsUnknownAgent(t *testing.T) {

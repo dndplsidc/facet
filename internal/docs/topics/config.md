@@ -62,8 +62,10 @@ configs:
 ai:
   pi:
     extensions:
-      - pi-lens
-      - pi-subagents
+      - source: npm:pi-intercom
+      - source: npm:@company/internal-pi-extension
+        install_env:
+          NPM_CONFIG_REGISTRY: https://bnpm.byted.org
 ```
 
 ## `profiles/<name>.yaml`

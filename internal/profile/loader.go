@@ -60,6 +60,13 @@ func ValidateMergedConfig(cfg *FacetConfig) error {
 	if cfg.AI == nil {
 		return nil
 	}
+	if cfg.AI.Pi != nil {
+		for i, ext := range cfg.AI.Pi.Extensions {
+			if ext.Source == "" {
+				return fmt.Errorf("ai.pi.extensions[%d].source must not be empty", i)
+			}
+		}
+	}
 	needsAgents := len(cfg.AI.Permissions) > 0 || len(cfg.AI.Skills) > 0 || len(cfg.AI.MCPs) > 0
 	if len(cfg.AI.Agents) == 0 {
 		if needsAgents {

@@ -16,9 +16,11 @@ packages:
 ai:
   pi:
     extensions:
-      - pi-lens
-      - pi-subagents
-      - "${facet:pi_extra}"
+      - source: pi-lens
+      - source: pi-subagents
+      - source: "${facet:pi_extra}"
+        install_env:
+          NPM_CONFIG_REGISTRY: https://registry.example.com
 YAML
 
 cat > "$HOME/dotfiles/profiles/work.yaml" << 'YAML'
@@ -27,8 +29,8 @@ extends: base
 ai:
   pi:
     extensions:
-      - pi-subagents
-      - pi-interactive-shell
+      - source: pi-subagents
+      - source: pi-interactive-shell
 YAML
 
 facet_apply work
@@ -36,6 +38,7 @@ assert_file_exists "$HOME/.mock-pi"
 assert_file_contains "$HOME/.mock-pi" "pi install pi-lens"
 assert_file_contains "$HOME/.mock-pi" "pi install pi-subagents"
 assert_file_contains "$HOME/.mock-pi" "pi install @gotgenes/pi-session-tools"
+assert_file_contains "$HOME/.mock-pi" "pi install env NPM_CONFIG_REGISTRY=https://registry.example.com"
 assert_file_contains "$HOME/.mock-pi" "pi install pi-interactive-shell"
 assert_json_field "$HOME/.facet/.state.json" '.ai.pi.extensions[0]' '@gotgenes/pi-session-tools'
 echo "  ai.pi.extensions installed and recorded"
@@ -49,7 +52,7 @@ packages:
 ai:
   pi:
     extensions:
-      - pi-lens
+      - source: pi-lens
 YAML
 cat > "$HOME/dotfiles/profiles/work.yaml" << 'YAML'
 extends: base

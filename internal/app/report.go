@@ -170,7 +170,7 @@ func (a *App) printDryRun(profileName string, resolved *profile.FacetConfig, opt
 	if resolved.AI != nil && resolved.AI.Pi != nil && len(resolved.AI.Pi.Extensions) > 0 {
 		a.reporter.Header("AI Pi extensions to install")
 		for _, ext := range resolved.AI.Pi.Extensions {
-			a.reporter.Success(ext)
+			a.reporter.Success(ext.Source)
 		}
 	}
 

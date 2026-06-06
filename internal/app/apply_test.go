@@ -301,7 +301,10 @@ func TestApply_WithPiExtensions(t *testing.T) {
 			filepath.Join(cfgDir, "base.yaml"): baseCfg,
 			filepath.Join(cfgDir, "profiles", "work.yaml"): {
 				Extends: "base",
-				AI:      &profile.AIConfig{Pi: &profile.PiConfig{Extensions: []string{"pi-lens"}}},
+				AI: &profile.AIConfig{Pi: &profile.PiConfig{Extensions: []profile.PiExtensionEntry{{
+					Source:     "pi-lens",
+					InstallEnv: map[string]string{"NPM_CONFIG_REGISTRY": "https://registry.example.com"},
+				}}}},
 			},
 			filepath.Join(stateDir, ".local.yaml"): {},
 		},
@@ -324,7 +327,10 @@ func TestApply_WithPiExtensions(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, piMgr.applyCalled)
 	require.NotNil(t, piMgr.applyConfig)
-	assert.Equal(t, []string{"pi-lens"}, piMgr.applyConfig.Extensions)
+	assert.Equal(t, []pi.ExtensionEntry{{
+		Source:     "pi-lens",
+		InstallEnv: map[string]string{"NPM_CONFIG_REGISTRY": "https://registry.example.com"},
+	}}, piMgr.applyConfig.Extensions)
 	require.NotNil(t, stateStore.written.AI)
 	require.NotNil(t, stateStore.written.AI.Pi)
 	assert.Equal(t, []string{"pi-lens"}, stateStore.written.AI.Pi.Extensions)
@@ -343,7 +349,7 @@ func TestApply_ForcePassesPiForceOption(t *testing.T) {
 		filepath.Join(cfgDir, "base.yaml"): baseCfg,
 		filepath.Join(cfgDir, "profiles", "work.yaml"): {
 			Extends: "base",
-			AI:      &profile.AIConfig{Pi: &profile.PiConfig{Extensions: []string{"pi-lens"}}},
+			AI:      &profile.AIConfig{Pi: &profile.PiConfig{Extensions: []profile.PiExtensionEntry{{Source: "pi-lens"}}}},
 		},
 		filepath.Join(stateDir, ".local.yaml"): {},
 	}}
@@ -393,7 +399,7 @@ func TestApply_ProfileSwitchTriggersPiUnapply(t *testing.T) {
 		filepath.Join(cfgDir, "base.yaml"): baseCfg,
 		filepath.Join(cfgDir, "profiles", "personal.yaml"): {
 			Extends: "base",
-			AI:      &profile.AIConfig{Pi: &profile.PiConfig{Extensions: []string{"pi-subagents"}}},
+			AI:      &profile.AIConfig{Pi: &profile.PiConfig{Extensions: []profile.PiExtensionEntry{{Source: "pi-subagents"}}}},
 		},
 		filepath.Join(stateDir, ".local.yaml"): {},
 	}}

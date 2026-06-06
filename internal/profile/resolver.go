@@ -225,11 +225,22 @@ func resolvePi(piCfg *PiConfig, vars map[string]any) (*PiConfig, error) {
 	}
 	result := &PiConfig{}
 	if piCfg.Extensions != nil {
-		result.Extensions = make([]string, len(piCfg.Extensions))
+		result.Extensions = make([]PiExtensionEntry, len(piCfg.Extensions))
 		for i, ext := range piCfg.Extensions {
-			resolved, err := substituteVars(ext, vars)
+			resolvedSource, err := substituteVars(ext.Source, vars)
 			if err != nil {
-				return nil, fmt.Errorf("ai.pi.extensions[%d]: %w", i, err)
+				return nil, fmt.Errorf("ai.pi.extensions[%d].source: %w", i, err)
+			}
+			resolved := PiExtensionEntry{Source: resolvedSource}
+			if ext.InstallEnv != nil {
+				resolved.InstallEnv = make(map[string]string, len(ext.InstallEnv))
+				for key, value := range ext.InstallEnv {
+					resolvedValue, err := substituteVars(value, vars)
+					if err != nil {
+						return nil, fmt.Errorf("ai.pi.extensions[%d].install_env.%s: %w", i, key, err)
+					}
+					resolved.InstallEnv[key] = resolvedValue
+				}
 			}
 			result.Extensions[i] = resolved
 		}

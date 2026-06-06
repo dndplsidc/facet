@@ -414,7 +414,10 @@ func (a *App) Apply(profileName string, opts ApplyOpts) (applyErr error) {
 	effectiveAI := ai.Resolve(resolved.AI)
 	var effectivePi *pi.Config
 	if resolved.AI != nil && resolved.AI.Pi != nil {
-		effectivePi = &pi.Config{Extensions: append([]string{}, resolved.AI.Pi.Extensions...)}
+		effectivePi = &pi.Config{Extensions: make([]pi.ExtensionEntry, len(resolved.AI.Pi.Extensions))}
+		for i, ext := range resolved.AI.Pi.Extensions {
+			effectivePi.Extensions[i] = pi.ExtensionEntry{Source: ext.Source, InstallEnv: copyStringMap(ext.InstallEnv)}
+		}
 	}
 	if stages["ai"] && ((a.aiOrchestrator != nil && (effectiveAI != nil || prevAIState != nil)) || (a.piManager != nil && (effectivePi != nil || prevPiState != nil))) {
 		done := a.reporter.ProgressStart("Applying AI configuration")
@@ -529,6 +532,17 @@ func (a *App) runScripts(scripts []profile.ScriptEntry, fallbackDir, stageName s
 	}
 
 	return nil
+}
+
+func copyStringMap(src map[string]string) map[string]string {
+	if src == nil {
+		return nil
+	}
+	result := make(map[string]string, len(src))
+	for key, value := range src {
+		result[key] = value
+	}
+	return result
 }
 
 func isEmptyAIState(state *ai.AIState) bool {
