@@ -459,6 +459,38 @@ func TestOrchestrator_Unapply(t *testing.T) {
 	}
 }
 
+func TestOrchestrator_Unapply_EmitsProgressForRemovalOperations(t *testing.T) {
+	provider := &mockProvider{name: "claude-code"}
+	reporter := &mockReporter{}
+	orch := NewOrchestrator(
+		map[string]AgentProvider{"claude-code": provider},
+		&mockSkillsMgr{},
+		reporter,
+	)
+
+	previousState := &AIState{
+		Permissions: map[string]PermissionState{
+			"claude-code": {Allow: []string{"Read"}},
+		},
+		Skills: []SkillState{
+			{Source: "@org/skills", Name: "skill-1", Agents: []string{"claude-code"}},
+		},
+		MCPs: []MCPState{
+			{Name: "playwright", Agents: []string{"claude-code"}},
+		},
+	}
+
+	require.NoError(t, orch.Unapply(previousState))
+
+	progressOutput := strings.Join(reporter.messages, "\n")
+	assert.Contains(t, progressOutput, "progress:   -> mcp remove playwright claude-code ... start")
+	assert.Contains(t, progressOutput, "progress:   -> mcp remove playwright claude-code ... ok")
+	assert.Contains(t, progressOutput, "progress:   -> skills remove skill-1 claude-code ... start")
+	assert.Contains(t, progressOutput, "progress:   -> skills remove skill-1 claude-code ... ok")
+	assert.Contains(t, progressOutput, "progress:   -> permissions remove claude-code ... start")
+	assert.Contains(t, progressOutput, "progress:   -> permissions remove claude-code ... ok")
+}
+
 func TestOrchestrator_Unapply_NilState(t *testing.T) {
 	orch := NewOrchestrator(map[string]AgentProvider{}, &mockSkillsMgr{}, &mockReporter{})
 	if err := orch.Unapply(nil); err != nil {

@@ -77,7 +77,10 @@ func (o *Orchestrator) Unapply(previousState *AIState) error {
 				o.reporter.Warning(fmt.Sprintf("no provider for agent %q, skipping MCP removal for %q", agent, mcp.Name))
 				continue
 			}
-			if err := provider.RemoveMCP(mcp.Name); err != nil {
+			label := fmt.Sprintf("  -> mcp remove %s %s", mcp.Name, agent)
+			if err := o.progressStarted(label, func() error {
+				return provider.RemoveMCP(mcp.Name)
+			}); err != nil {
 				o.reporter.Warning(fmt.Sprintf("failed to remove MCP %q from %q: %v", mcp.Name, agent, err))
 			}
 		}
@@ -87,9 +90,12 @@ func (o *Orchestrator) Unapply(previousState *AIState) error {
 	for _, skill := range previousState.Skills {
 		skillsToRemove := []string{skill.Name}
 		if skill.Name == "" {
-			var err error
-			skillsToRemove, err = o.skillsManager.InstalledForSource(skill.Source)
-			if err != nil {
+			label := fmt.Sprintf("  -> skills detect %s", skill.Source)
+			if err := o.progressStarted(label, func() error {
+				var err error
+				skillsToRemove, err = o.skillsManager.InstalledForSource(skill.Source)
+				return err
+			}); err != nil {
 				o.reporter.Warning(fmt.Sprintf("failed to resolve skills for source %q: %v", skill.Source, err))
 				continue
 			}
@@ -97,7 +103,10 @@ func (o *Orchestrator) Unapply(previousState *AIState) error {
 				continue
 			}
 		}
-		if err := o.skillsManager.Remove(skillsToRemove, skill.Agents); err != nil {
+		label := fmt.Sprintf("  -> skills remove %s %s", strings.Join(skillsToRemove, ","), strings.Join(skill.Agents, ","))
+		if err := o.progressStarted(label, func() error {
+			return o.skillsManager.Remove(skillsToRemove, skill.Agents)
+		}); err != nil {
 			o.reporter.Warning(fmt.Sprintf("failed to remove skills for source %q: %v", skill.Source, err))
 		}
 	}
@@ -110,12 +119,26 @@ func (o *Orchestrator) Unapply(previousState *AIState) error {
 			continue
 		}
 		perms := ResolvedPermissions{Allow: ps.Allow, Deny: ps.Deny}
-		if err := provider.RemovePermissions(perms); err != nil {
+		label := fmt.Sprintf("  -> permissions remove %s", agent)
+		if err := o.progressStarted(label, func() error {
+			return provider.RemovePermissions(perms)
+		}); err != nil {
 			o.reporter.Warning(fmt.Sprintf("failed to remove permissions for %q: %v", agent, err))
 		}
 	}
 
 	return nil
+}
+
+func (o *Orchestrator) progressStarted(label string, fn func() error) error {
+	done := o.reporter.ProgressStart(label)
+	err := fn()
+	outcome := "ok"
+	if err != nil {
+		outcome = "failed"
+	}
+	done(outcome, err)
+	return err
 }
 
 // applyPermissions removes permissions for dropped agents, then applies
