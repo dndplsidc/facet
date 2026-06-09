@@ -91,7 +91,8 @@ Each skill entry has:
 
 - `source`: package or path passed to the skills installer (see formats below)
 - `skills`: optional list of skill names from that source. **If omitted, all skills
-  from the source are installed** (equivalent to `npx skills add <source> --all`).
+  from the source are installed** using the skills CLI wildcard (`--skill "*"`) while
+  preserving facet's explicit agent list.
 - `agents`: optional list limiting installation to specific agents. When omitted,
   skills are installed for `claude-code`, `cursor`, `codex`, and `pi` only (not every
   agent in `ai.agents`). To target other agents, list them explicitly. The Pi

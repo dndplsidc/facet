@@ -36,7 +36,7 @@ func (m *NPXSkillsManager) checkNPX() error {
 }
 
 // Install runs: npx skills add <source> --skill <s1> --skill <s2> -a <a1> -a <a2> -y
-// When skills is empty, passes --all instead of individual --skill flags.
+// When skills is empty, passes --skill * to request all skills while preserving explicit agent scoping.
 func (m *NPXSkillsManager) Install(source string, skills []string, agents []string) error {
 	if err := m.checkNPX(); err != nil {
 		return err
@@ -45,7 +45,7 @@ func (m *NPXSkillsManager) Install(source string, skills []string, agents []stri
 	var parts []string
 	parts = append(parts, "npx", "skills", "add", source)
 	if len(skills) == 0 {
-		parts = append(parts, "--all")
+		parts = append(parts, "--skill", "*")
 	} else {
 		for _, s := range skills {
 			parts = append(parts, "--skill", s)

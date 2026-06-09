@@ -322,7 +322,7 @@ func (o *Orchestrator) applySkills(config EffectiveAIConfig, previousState *AISt
 
 		var installSkills []string
 		if allGroups[gk] {
-			// "All" group — pass nil to trigger --all flag.
+			// "All" group — pass nil to request all skills while preserving explicit agent scope.
 			installSkills = nil
 		} else {
 			sort.Strings(skills)
