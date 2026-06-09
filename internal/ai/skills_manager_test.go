@@ -320,11 +320,11 @@ func TestNPXSkillsManager_Update_NPXNotFound(t *testing.T) {
 	}
 }
 
-func TestNPXSkillsManager_Install_AllSkills(t *testing.T) {
+func TestNPXSkillsManager_Install_AllSkillsUsesSkillWildcardWithoutAllAgentShortcut(t *testing.T) {
 	runner := &mockRunner{}
 	mgr := NewNPXSkillsManager(runner, "")
 
-	err := mgr.Install("@my-org/skills", nil, []string{"claude-code", "cursor"})
+	err := mgr.Install("@my-org/skills", nil, []string{"claude-code", "cursor", "pi"})
 	if err != nil {
 		t.Fatalf("Install returned unexpected error: %v", err)
 	}
@@ -333,13 +333,13 @@ func TestNPXSkillsManager_Install_AllSkills(t *testing.T) {
 		t.Fatalf("expected 2 commands, got %d: %v", len(runner.commands), runner.commands)
 	}
 
-	want := "npx skills add @my-org/skills --all -a claude-code -a cursor -g -y"
+	want := "npx skills add @my-org/skills --skill * -a claude-code -a cursor -a pi -g -y"
 	if runner.commands[1] != want {
 		t.Errorf("unexpected install command:\n  got:  %q\n  want: %q", runner.commands[1], want)
 	}
 }
 
-func TestNPXSkillsManager_Install_AllSkillsEmptySlice(t *testing.T) {
+func TestNPXSkillsManager_Install_AllSkillsEmptySliceUsesSkillWildcard(t *testing.T) {
 	runner := &mockRunner{}
 	mgr := NewNPXSkillsManager(runner, "")
 
@@ -348,7 +348,7 @@ func TestNPXSkillsManager_Install_AllSkillsEmptySlice(t *testing.T) {
 		t.Fatalf("Install returned unexpected error: %v", err)
 	}
 
-	want := "npx skills add @my-org/skills --all -a claude-code -g -y"
+	want := "npx skills add @my-org/skills --skill * -a claude-code -g -y"
 	if runner.commands[1] != want {
 		t.Errorf("unexpected install command:\n  got:  %q\n  want: %q", runner.commands[1], want)
 	}

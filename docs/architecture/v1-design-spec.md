@@ -492,10 +492,12 @@ applies AI permissions, skills, MCPs, and Pi extensions together.
 `facet apply` reconciles AI configuration for supported agents. Permissions and
 MCP registrations are applied per agent. Skill entries may either list explicit
 skill names or omit the `skills` list to mean "all skills from this source."
-When a skill entry omits `agents`, facet targets the default skill agents:
-`claude-code`, `cursor`, `codex`, and `pi`. The Pi skill agent name passed to
-`npx skills` is `pi`; Pi does not add permissions or MCP behavior. Unscoped
-MCP entries do not target `pi`.
+All-skills installs use the skills CLI wildcard (`--skill "*"`) instead of the
+CLI `--all` shortcut so facet's explicit agent scope is preserved. When a skill
+entry omits `agents`, facet targets the default skill agents: `claude-code`,
+`cursor`, `codex`, and `pi`. The Pi skill agent name passed to `npx skills` is
+`pi`; Pi does not add permissions or MCP behavior. Unscoped MCP entries do not
+target `pi`.
 
 For Claude Code, MCP servers are registered at user scope via
 `claude mcp add --scope user` (and removed via
