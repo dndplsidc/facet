@@ -50,9 +50,13 @@ func main() {
 		fmt.Fprintf(os.Stderr, "cannot determine home directory: %v\n", err)
 		os.Exit(1)
 	}
+	skillLockPath := filepath.Join(homeDir, ".agents", ".skill-lock.json")
+	if stateHome := os.Getenv("XDG_STATE_HOME"); stateHome != "" {
+		skillLockPath = filepath.Join(stateHome, "skills", ".skill-lock.json")
+	}
 	skillsMgr := ai.NewNPXSkillsManager(
 		aiRunner,
-		filepath.Join(homeDir, ".agents", ".skill-lock.json"),
+		skillLockPath,
 	)
 	providers := map[string]ai.AgentProvider{
 		"claude-code": ai.NewClaudeCodeProvider(

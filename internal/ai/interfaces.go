@@ -15,6 +15,7 @@ type SkillsManager interface {
 	Install(source string, skills []string, agents []string) error
 	Remove(skills []string, agents []string) error
 	InstalledForSource(source string) ([]string, error)
+	TrackedForSource(source string) ([]string, error)
 	Check() error
 	Update() error
 }

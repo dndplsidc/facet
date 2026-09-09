@@ -744,6 +744,12 @@ func TestApply_ProfileSwitchTriggersAIUnapply(t *testing.T) {
 	assert.Equal(t, prevAIState, aiOrch.unapplyPrev, "Unapply should receive the previous AI state")
 	assert.True(t, aiOrch.applyCalled, "AI orchestrator Apply should still be called for the new profile")
 	assert.Nil(t, aiOrch.applyPrev, "Apply should not diff against previous AI state after full unapply")
+
+	// If unapply fails, reconciliation must retain the old ownership records.
+	stateStore.state = &ApplyState{Profile: "work", AI: prevAIState}
+	aiOrch.unapplyErr = fmt.Errorf("skill cleanup failed")
+	require.NoError(t, a.Apply("personal", ApplyOpts{ConfigDir: cfgDir, StateDir: stateDir}))
+	assert.Equal(t, prevAIState, aiOrch.applyPrev, "failed unapply must remain available for cleanup retry")
 }
 
 func TestApply_ForceTriggersAIUnapply(t *testing.T) {

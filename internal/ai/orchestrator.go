@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -63,7 +64,9 @@ func (o *Orchestrator) Apply(config EffectiveAIConfig, previousState *AIState) (
 }
 
 // Unapply removes all AI configuration tracked in previousState. Order is
-// reverse of apply: MCPs, then skills, then permissions.
+// reverse of apply: MCPs, then skills, then permissions. On skill cleanup error,
+// previousState.Skills retains concrete retry candidates, expanding legacy
+// all-source records before their CLI lock metadata can disappear.
 func (o *Orchestrator) Unapply(previousState *AIState) error {
 	if previousState == nil {
 		return nil
@@ -87,27 +90,35 @@ func (o *Orchestrator) Unapply(previousState *AIState) error {
 	}
 
 	// 2. Remove skills.
+	var cleanupErrors []error
+	var retrySkills []SkillState
 	for _, skill := range previousState.Skills {
 		skillsToRemove := []string{skill.Name}
 		if skill.Name == "" {
 			label := fmt.Sprintf("  -> skills detect %s", skill.Source)
 			if err := o.progressStarted(label, func() error {
 				var err error
-				skillsToRemove, err = o.skillsManager.InstalledForSource(skill.Source)
+				skillsToRemove, err = o.skillsManager.TrackedForSource(skill.Source)
 				return err
 			}); err != nil {
 				o.reporter.Warning(fmt.Sprintf("failed to resolve skills for source %q: %v", skill.Source, err))
+				cleanupErrors = append(cleanupErrors, err)
+				retrySkills = append(retrySkills, skill)
 				continue
 			}
 			if len(skillsToRemove) == 0 {
 				continue
 			}
 		}
-		label := fmt.Sprintf("  -> skills remove %s %s", strings.Join(skillsToRemove, ","), strings.Join(skill.Agents, ","))
+		for _, name := range skillsToRemove {
+			retrySkills = append(retrySkills, SkillState{Source: skill.Source, Name: name, Agents: append([]string(nil), skill.Agents...)})
+		}
+		label := fmt.Sprintf("  -> skills remove %s all agents", strings.Join(skillsToRemove, ","))
 		if err := o.progressStarted(label, func() error {
-			return o.skillsManager.Remove(skillsToRemove, skill.Agents)
+			return o.skillsManager.Remove(skillsToRemove, nil)
 		}); err != nil {
 			o.reporter.Warning(fmt.Sprintf("failed to remove skills for source %q: %v", skill.Source, err))
+			cleanupErrors = append(cleanupErrors, err)
 		}
 	}
 
@@ -127,7 +138,10 @@ func (o *Orchestrator) Unapply(previousState *AIState) error {
 		}
 	}
 
-	return nil
+	if len(cleanupErrors) > 0 {
+		previousState.Skills = retrySkills
+	}
+	return errors.Join(cleanupErrors...)
 }
 
 func (o *Orchestrator) progressStarted(label string, fn func() error) error {
@@ -222,6 +236,7 @@ func (o *Orchestrator) applySkills(config EffectiveAIConfig, previousState *AISt
 	currentSkills := make(map[skillID]map[string]struct{})
 	// Track which sources have an "all" entry per agent.
 	currentAllSources := make(map[string]map[string]struct{}) // source → set of agents
+	failedCleanup := make(map[skillID]bool)
 
 	for agent, agentCfg := range config {
 		for _, skill := range agentCfg.Skills {
@@ -260,6 +275,7 @@ func (o *Orchestrator) applySkills(config EffectiveAIConfig, previousState *AISt
 					})
 					if err != nil {
 						o.reporter.Warning(fmt.Sprintf("failed to resolve orphan skills from %q for %q: %v", prevSkill.Source, agent, err))
+						failedCleanup[skillID{source: prevSkill.Source}] = true
 						continue
 					}
 					if len(skillsToRemove) == 0 {
@@ -288,6 +304,23 @@ func (o *Orchestrator) applySkills(config EffectiveAIConfig, previousState *AISt
 		removalGroups := make(map[skillGroupKey][]string)
 		for id, agentSet := range removals {
 			agents := sortedSetKeys(agentSet)
+			// Shared storage must survive while any desired universal agent uses
+			// this name. Otherwise reset globally, then reinstall desired native
+			// copies below. An unscoped remove also cleans the CLI's lock entry.
+			sharedDesired := false
+			for desired, desiredAgents := range currentSkills {
+				if desired.name != id.name && !(desired.name == "" && desired.source == id.source) {
+					continue
+				}
+				for agent := range desiredAgents {
+					if !nativeSkillAgent(agent) {
+						sharedDesired = true
+					}
+				}
+			}
+			if !sharedDesired {
+				agents = nil
+			}
 			key := skillGroupKey{source: id.source, agents: strings.Join(agents, ",")}
 			removalGroups[key] = append(removalGroups[key], id.name)
 		}
@@ -306,16 +339,61 @@ func (o *Orchestrator) applySkills(config EffectiveAIConfig, previousState *AISt
 		for _, key := range removalKeys {
 			skills := removalGroups[key]
 			sort.Strings(skills)
-			agents := strings.Split(key.agents, ",")
-			label := "  -> skills remove " + strings.Join(skills, ",") + " " + key.agents
+			var agents []string
+			if key.agents != "" {
+				agents = strings.Split(key.agents, ",")
+			}
+			scope := key.agents
+			if scope == "" {
+				scope = "all agents"
+			}
+			label := "  -> skills remove " + strings.Join(skills, ",") + " " + scope
 			if err := o.reporter.ProgressStep(label, func() error {
 				return o.skillsManager.Remove(skills, agents)
 			}); err != nil {
-				o.reporter.Warning(fmt.Sprintf("failed to remove orphan skills %v from %v: %v", skills, agents, err))
+				o.reporter.Warning(fmt.Sprintf("failed to remove orphan skills %v from %s: %v", skills, scope, err))
+				for _, name := range skills {
+					failedCleanup[skillID{source: key.source, name: name}] = true
+				}
 			} else {
-				o.reporter.Success(fmt.Sprintf("removed orphan skills %v from %s", skills, strings.Join(agents, ", ")))
+				o.reporter.Success(fmt.Sprintf("removed orphan skills %v from %s", skills, scope))
 			}
 		}
+		// Keep existing ownership information until cleanup succeeds. No extra
+		// state file or lock-file edits are needed, and the next apply retries.
+		for _, previous := range previousState.Skills {
+			for id := range failedCleanup {
+				if id.source == previous.Source {
+					state.Skills = append(state.Skills, previous)
+					break
+				}
+			}
+		}
+		// A legacy all-source record must also retain concrete failed names:
+		// the CLI may have deleted their lock entries before reporting failure.
+		var concreteRetries []SkillState
+		for id := range failedCleanup {
+			if id.name == "" {
+				continue
+			}
+			recorded := false
+			for _, previous := range state.Skills {
+				if previous.Source == id.source && previous.Name == id.name {
+					recorded = true
+					break
+				}
+			}
+			if !recorded {
+				concreteRetries = append(concreteRetries, SkillState{Source: id.source, Name: id.name, Agents: sortedSetKeys(removals[id])})
+			}
+		}
+		sort.Slice(concreteRetries, func(i, j int) bool {
+			if concreteRetries[i].Source != concreteRetries[j].Source {
+				return concreteRetries[i].Source < concreteRetries[j].Source
+			}
+			return concreteRetries[i].Name < concreteRetries[j].Name
+		})
+		state.Skills = append(state.Skills, concreteRetries...)
 	}
 
 	// Group skills by (source, sorted agents) for batched Install calls.
@@ -349,6 +427,17 @@ func (o *Orchestrator) applySkills(config EffectiveAIConfig, previousState *AISt
 	for _, gk := range groupKeys {
 		skills := groups[gk]
 		agents := strings.Split(gk.agents, ",")
+		// A failed reset must not be followed by an install that hides the
+		// failure or replaces the previous agent set needed for retry.
+		blocked := false
+		for id := range failedCleanup {
+			if id.source == gk.source {
+				blocked = true
+			}
+		}
+		if blocked {
+			continue
+		}
 
 		var installSkills []string
 		if allGroups[gk] {
@@ -448,7 +537,7 @@ func (o *Orchestrator) sourceSkillsToRemove(
 		}
 	}
 
-	installed, err := o.skillsManager.InstalledForSource(source)
+	installed, err := o.skillsManager.TrackedForSource(source)
 	if err != nil {
 		return nil, err
 	}
