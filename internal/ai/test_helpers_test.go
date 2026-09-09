@@ -7,11 +7,26 @@ type mockRunner struct {
 	commands            []string
 	interactiveCommands []string
 	err                 error
+	output              []byte
+}
+
+func (m *mockRunner) Output(name string, args ...string) ([]byte, error) {
+	if err := m.Run(name, args...); err != nil {
+		return nil, err
+	}
+	if m.output == nil {
+		return []byte("[]"), nil
+	}
+	return m.output, nil
 }
 
 func (m *mockRunner) Run(name string, args ...string) error {
 	m.commands = append(m.commands, strings.Join(append([]string{name}, args...), " "))
 	return m.err
+}
+
+func (m *mockRunner) RunInDir(_ string, name string, args ...string) error {
+	return m.Run(name, args...)
 }
 
 func (m *mockRunner) RunInteractive(name string, args ...string) error {
@@ -30,6 +45,10 @@ type sequentialMockRunner struct {
 	callIdx             int
 }
 
+func (m *sequentialMockRunner) Output(name string, args ...string) ([]byte, error) {
+	return []byte("[]"), m.Run(name, args...)
+}
+
 func (m *sequentialMockRunner) Run(name string, args ...string) error {
 	m.commands = append(m.commands, strings.Join(append([]string{name}, args...), " "))
 	var err error
@@ -38,6 +57,10 @@ func (m *sequentialMockRunner) Run(name string, args ...string) error {
 	}
 	m.callIdx++
 	return err
+}
+
+func (m *sequentialMockRunner) RunInDir(_ string, name string, args ...string) error {
+	return m.Run(name, args...)
 }
 
 func (m *sequentialMockRunner) RunInteractive(name string, args ...string) error {

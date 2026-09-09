@@ -85,6 +85,47 @@ if [ "$1" = "--version" ]; then
 fi
 if [ "$1" = "skills" ]; then
     echo "npx $*" >> "$MOCK_AI_LOG"
+    lock="${XDG_STATE_HOME:+$XDG_STATE_HOME/skills/.skill-lock.json}"
+    lock="${lock:-$HOME/.agents/.skill-lock.json}"
+    if [ "$2" = "list" ]; then
+        if [ -f "$HOME/.mock-skills-inventory.json" ]; then
+            cat "$HOME/.mock-skills-inventory.json"
+        elif [ -f "$lock" ]; then
+            jq '[.skills | keys[] | {name: .}]' "$lock"
+        else
+            echo '[]'
+        fi
+        exit 0
+    fi
+    if [ -f "$lock" ] && jq empty "$lock" 2>/dev/null; then
+        catalog="$HOME/.mock-skills-catalog.json"
+        if [ ! -f "$catalog" ]; then echo '{"skills":{}}' > "$catalog"; fi
+        jq -s '.[0] * .[1]' "$catalog" "$lock" > "$catalog.tmp"
+        mv "$catalog.tmp" "$catalog"
+        if [ "$2" = "remove" ] && [[ " $* " != *" -a "* ]] && [ ! -f "$HOME/.mock-skills-retain" ]; then
+            shift 2
+            for name in "$@"; do
+                [[ "$name" == -* ]] && break
+                jq --arg name "$name" 'del(.skills[$name])' "$lock" > "$lock.tmp"
+                mv "$lock.tmp" "$lock"
+            done
+        elif [ "$2" = "add" ]; then
+            source="$3"
+            shift 3
+            while [ "$#" -gt 0 ]; do
+                if [ "$1" = "--skill" ]; then
+                    name="$2"
+                    jq --arg source "$source" --arg name "$name" \
+                        '.skills |= with_entries(select((.value.source == $source or .value.sourceUrl == $source) and ($name == "*" or .key == $name)))' \
+                        "$catalog" > "$catalog.selected"
+                    jq -s '.[0] * .[1]' "$lock" "$catalog.selected" > "$lock.tmp"
+                    mv "$lock.tmp" "$lock"
+                    shift
+                fi
+                shift
+            done
+        fi
+    fi
     echo "mock-npx: skills $*"
     exit 0
 fi

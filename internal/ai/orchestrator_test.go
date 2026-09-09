@@ -97,8 +97,80 @@ func (m *mockSkillsMgr) InstalledForSource(source string) ([]string, error) {
 	return append([]string{}, m.sourceSkills[source]...), nil
 }
 
+func (m *mockSkillsMgr) TrackedForSource(source string) ([]string, error) {
+	return m.InstalledForSource(source)
+}
+
 func (m *mockSkillsMgr) Check() error  { return nil }
 func (m *mockSkillsMgr) Update() error { return nil }
+
+func TestOrchestrator_LegacyCleanupRetainsConcreteNamesAfterLockDisappears(t *testing.T) {
+	mgr := &mockSkillsMgr{sourceSkills: map[string][]string{"org/repo": {"example"}}, removeErr: errors.New("native copy remains installed")}
+	orch := NewOrchestrator(nil, mgr, &mockReporter{})
+	prev := &AIState{Skills: []SkillState{{Source: "org/repo", Agents: []string{"claude-code", "codex"}}}}
+	state, err := orch.Apply(EffectiveAIConfig{}, prev)
+	require.NoError(t, err)
+	// Removal erased the CLI lock but left a native copy. Only Facet's
+	// retained concrete name can identify that copy for the next attempt.
+	mgr.sourceSkills = nil
+	mgr.removeErr = nil
+	state, err = orch.Apply(EffectiveAIConfig{}, state)
+	require.NoError(t, err)
+	require.Len(t, mgr.removed, 1)
+	require.Equal(t, []string{"example"}, mgr.removed[0].skills)
+	require.Empty(t, state.Skills)
+}
+
+func TestOrchestrator_UnapplyLegacyCleanupRetainsConcreteNames(t *testing.T) {
+	mgr := &mockSkillsMgr{sourceSkills: map[string][]string{"org/repo": {"example"}}, removeErr: errors.New("native copy remains")}
+	orch := NewOrchestrator(nil, mgr, &mockReporter{})
+	prev := &AIState{Skills: []SkillState{{Source: "org/repo", Agents: []string{"codex"}}}}
+	require.Error(t, orch.Unapply(prev))
+	mgr.sourceSkills, mgr.removeErr = nil, nil
+	state, err := orch.Apply(EffectiveAIConfig{}, prev)
+	require.NoError(t, err)
+	require.Len(t, mgr.removed, 1)
+	require.Equal(t, []string{"example"}, mgr.removed[0].skills)
+	require.Empty(t, state.Skills)
+}
+
+func TestOrchestrator_SkillCleanupLifecycle(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		remaining []string
+		fail      bool
+		global    bool
+	}{
+		{"removed entirely", nil, false, true},
+		{"native only", []string{"claude-code", "pi"}, false, true},
+		{"shared still needed", []string{"cursor"}, false, false},
+		{"failed cleanup retained", nil, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mgr := &mockSkillsMgr{sourceSkills: map[string][]string{"org/repo": {"example"}}}
+			if tc.fail {
+				mgr.removeErr = errors.New("cleanup failed")
+			}
+			prev := &AIState{Skills: []SkillState{{Source: "org/repo", Name: "example", Agents: []string{"claude-code", "codex", "cursor", "pi"}}}}
+			config := EffectiveAIConfig{}
+			for _, agent := range tc.remaining {
+				config[agent] = EffectiveAgentConfig{Skills: []ResolvedSkill{{Source: "org/repo", Name: "example"}}}
+			}
+			orch := NewOrchestrator(nil, mgr, &mockReporter{})
+			state, err := orch.Apply(config, prev)
+			require.NoError(t, err)
+			if tc.fail {
+				require.Equal(t, prev.Skills, state.Skills)
+				mgr.removeErr = nil
+				state, err = orch.Apply(config, state)
+				require.NoError(t, err)
+				require.Empty(t, state.Skills)
+			}
+			require.Len(t, mgr.removed, 1)
+			assert.Equal(t, tc.global, len(mgr.removed[0].agents) == 0)
+		})
+	}
+}
 
 type mockReporter struct {
 	messages []string
@@ -173,6 +245,10 @@ type errInstalledForSourceSkillsMgr struct {
 	installedForSourceErr error
 }
 
+func (m *errInstalledForSourceSkillsMgr) TrackedForSource(source string) ([]string, error) {
+	return m.InstalledForSource(source)
+}
+
 func (m *errInstalledForSourceSkillsMgr) Install(source string, skills []string, agents []string) error {
 	m.installed = append(m.installed, struct {
 		source string
@@ -244,6 +320,10 @@ func (t *trackingSkillsMgr) InstalledForSource(_ string) ([]string, error) {
 	return nil, nil
 }
 
+func (t *trackingSkillsMgr) TrackedForSource(source string) ([]string, error) {
+	return t.InstalledForSource(source)
+}
+
 func (t *trackingSkillsMgr) Check() error  { return nil }
 func (t *trackingSkillsMgr) Update() error { return nil }
 
@@ -283,6 +363,10 @@ func (s *selectiveSkillsMgr) Remove(skills []string, agents []string) error {
 
 func (s *selectiveSkillsMgr) InstalledForSource(source string) ([]string, error) {
 	return append([]string{}, s.sourceSkills[source]...), nil
+}
+
+func (s *selectiveSkillsMgr) TrackedForSource(source string) ([]string, error) {
+	return s.InstalledForSource(source)
 }
 
 func (s *selectiveSkillsMgr) Check() error  { return nil }
@@ -486,8 +570,8 @@ func TestOrchestrator_Unapply_EmitsProgressForRemovalOperations(t *testing.T) {
 	progressOutput := strings.Join(reporter.messages, "\n")
 	assert.Contains(t, progressOutput, "progress:   -> mcp remove playwright claude-code ... start")
 	assert.Contains(t, progressOutput, "progress:   -> mcp remove playwright claude-code ... ok")
-	assert.Contains(t, progressOutput, "progress:   -> skills remove skill-1 claude-code ... start")
-	assert.Contains(t, progressOutput, "progress:   -> skills remove skill-1 claude-code ... ok")
+	assert.Contains(t, progressOutput, "progress:   -> skills remove skill-1 all agents ... start")
+	assert.Contains(t, progressOutput, "progress:   -> skills remove skill-1 all agents ... ok")
 	assert.Contains(t, progressOutput, "progress:   -> permissions remove claude-code ... start")
 	assert.Contains(t, progressOutput, "progress:   -> permissions remove claude-code ... ok")
 }
@@ -672,8 +756,8 @@ func TestOrchestrator_Apply_SkillOrphanRemoval_PerAgentDelta(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Apply returned unexpected error: %v", err)
 	}
-	if len(skillsMgr.removed) != 1 || len(skillsMgr.removed[0].agents) != 1 || skillsMgr.removed[0].agents[0] != "cursor" {
-		t.Fatalf("expected cursor-only orphan removal, got %+v", skillsMgr.removed)
+	if len(skillsMgr.removed) != 1 || len(skillsMgr.removed[0].agents) != 0 {
+		t.Fatalf("expected global reset before native-only reinstall, got %+v", skillsMgr.removed)
 	}
 	if len(state.Skills) != 1 || len(state.Skills[0].Agents) != 1 || state.Skills[0].Agents[0] != "claude-code" {
 		t.Fatalf("unexpected state skills: %+v", state.Skills)
@@ -711,8 +795,8 @@ func TestOrchestrator_Apply_SkillOrphanRemoval_BatchesDroppedAgents(t *testing.T
 	if !slices.Equal(skillsMgr.removed[0].skills, []string{"frontend-design"}) {
 		t.Fatalf("unexpected removed skills: %v", skillsMgr.removed[0].skills)
 	}
-	if !slices.Equal(skillsMgr.removed[0].agents, []string{"claude-code", "codex", "cursor", "pi"}) {
-		t.Fatalf("expected sorted batched agents, got %v", skillsMgr.removed[0].agents)
+	if len(skillsMgr.removed[0].agents) != 0 {
+		t.Fatalf("expected unscoped removal, got %v", skillsMgr.removed[0].agents)
 	}
 }
 

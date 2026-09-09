@@ -103,17 +103,38 @@ removed or narrowed to fewer skills, facet removes the no-longer-declared skills
 for the affected agents before writing the new state. This includes entries that
 were previously installed as "all skills from this source."
 
-The skills CLI uses `~/.agents/skills` as shared canonical storage for default
-symlink installs. facet batches each orphan-removal command across every affected
-agent so the CLI receives the complete removed-agent set. The CLI can then delete
-the canonical skill directory when no remaining detected agent uses it; otherwise
-the shared directory is preserved for that agent.
+Codex and Cursor read shared storage at `~/.agents/skills`. When a previously
+Facet-managed skill is removed entirely, facet runs `npx skills remove <names>
+-g -y` without agent filters. This removes that skill across all CLI-supported
+agents, including its shared directory and lock entry, even if another detected
+agent such as Cline can discover it. Other skill names are left alone.
+Removal runs from an empty temporary directory to protect same-named project
+skills from the CLI's fallback paths.
 
-After installing named skills, facet verifies each one against the skill lock
-(`~/.agents/.skill-lock.json`). Skills that are absent from the lock after
-install are not recorded in state and trigger a warning; they may not exist in
-the source. If the lock file is unreadable, facet records the requested names as
-a fallback and warns.
+When a skill remains desired by Codex or Cursor, removals stay scoped to the
+dropped agents and shared storage is retained. Shared agents cannot be isolated
+from each other through this directory. When an agent reduction leaves only
+Claude Code and/or Pi, facet removes the skill globally and reinstalls the
+remaining native copies with `--copy`. Native-only installs always use `--copy`;
+this flag cannot avoid shared storage for Codex or Cursor.
+
+The skills CLI maintains its own lock at `~/.agents/.skill-lock.json`, or
+`$XDG_STATE_HOME/skills/.skill-lock.json` when configured. facet never edits it.
+After global removal, facet checks both the lock and `skills list -g --json`.
+Failed cleanup preserves the source's existing Facet state and defers its
+installs so the next apply can retry. No additional state file is created.
+Legacy all-source records retain concrete retry names even if the CLI already
+deleted their lock entries. Agent-scoped removals still rely on the CLI's exit
+status; they do not receive the global absence check because shared copies remain.
+
+After installation, facet records names confirmed by both the lock and actual
+CLI inventory, including native copies. A stale lock entry alone is not proof
+of installation. Missing names trigger a warning. If verification cannot be
+read, named installs fall back to recording requested names with a warning;
+all-source installs cannot infer names and warn instead. Cleanup uses the
+existing `.state.json` to identify previously managed skills; unrelated lock
+entries and remnants already absent from Facet state are not automatically
+pruned.
 
 ### Skill Source Formats
 

@@ -234,8 +234,9 @@ func (a *App) Apply(profileName string, opts ApplyOpts) (applyErr error) {
 						return a.aiOrchestrator.Unapply(prevState.AI)
 					}); err != nil {
 						a.reporter.Error(fmt.Sprintf("AI unapply failed: %v", err))
+					} else {
+						prevAIState = nil
 					}
-					prevAIState = nil
 				}
 				if willUnapplyPi {
 					if err := a.reporter.ProgressStep("  -> Pi unapply", func() error {

@@ -123,7 +123,7 @@ YAML
 
 : > "$HOME/.mock-ai"
 facet_apply work
-assert_file_contains "$HOME/.mock-ai" "npx skills remove skill-a skill-b -a claude-code -a codex -a cursor -a pi -g -y"
+assert_file_contains "$HOME/.mock-ai" "npx skills remove skill-a skill-b -g -y"
 assert_file_not_contains "$HOME/.mock-ai" "npx skills remove skill-a -a claude-code"
 assert_file_not_contains "$HOME/.mock-ai" "npx skills remove skill-b -a claude-code"
 echo "  applied specific skills"
@@ -162,10 +162,10 @@ YAML
 
 : > "$HOME/.mock-ai"
 facet_apply work
-assert_file_contains "$HOME/.mock-ai" "npx skills remove skill-b -a claude-code -g -y"
+assert_file_contains "$HOME/.mock-ai" "npx skills remove skill-b -g -y"
 assert_file_contains "$HOME/.mock-ai" "npx skills add @vercel-labs/agent-skills --skill skill-a"
 assert_file_not_contains "$HOME/.mock-ai" "other-skill"
-echo "  all to specific transition: no orphan removal, installs specific skills"
+echo "  all to specific transition removes omitted skills and installs specific skills"
 
 # Test 7: Transition from all to nothing removes only skills from that source
 cat > "$HOME/dotfiles/base.yaml" << 'YAML'
@@ -196,7 +196,8 @@ YAML
 
 : > "$HOME/.mock-ai"
 facet_apply work
-assert_file_contains "$HOME/.mock-ai" "npx skills remove skill-a skill-b -a claude-code -g -y"
+assert_file_contains "$HOME/.mock-ai" "npx skills remove skill-a skill-b -g -y"
+assert_json_field "$HOME/.agents/.skill-lock.json" '.skills | keys | join(",")' 'other-skill'
 assert_file_not_contains "$HOME/.mock-ai" "other-skill"
 echo "  all to nothing transition removes only resolved source skills"
 

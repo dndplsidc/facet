@@ -11,6 +11,10 @@ test:
 test-cover:
 	go test ./... -cover
 
+# Requires skills@1.5.25 installed outside the checkout; see e2e/skills_cli_test.go.
+test-skills-integration:
+	go test -tags skillsintegration ./e2e -run TestRealSkillsLifecycle -v -count=1
+
 clean:
 	rm -f facet e2e/facet-linux e2e/facet
 	rm -rf bin/
@@ -55,4 +59,4 @@ pre-commit: test e2e
 ci: test e2e
 	@echo "All tests passed"
 
-.PHONY: build build-test build-linux build-linux-arm test test-cover clean e2e e2e-suite e2e-shell e2e-local e2e-local-suite pre-commit ci
+.PHONY: build build-test build-linux build-linux-arm test test-cover test-skills-integration clean e2e e2e-suite e2e-shell e2e-local e2e-local-suite pre-commit ci

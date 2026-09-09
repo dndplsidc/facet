@@ -15,9 +15,25 @@ func New() *Runner {
 	return &Runner{}
 }
 
+// Output captures stdout for machine-readable commands and keeps stderr separate.
+func (r *Runner) Output(name string, args ...string) ([]byte, error) {
+	output, err := exec.Command(name, args...).Output()
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", name, err)
+	}
+	return output, nil
+}
+
 // Run executes the given command and argv.
 func (r *Runner) Run(name string, args ...string) error {
 	return r.RunWithEnv(nil, name, args...)
+}
+
+// RunInDir executes a command with an explicit working directory.
+func (r *Runner) RunInDir(dir string, name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	return run(cmd)
 }
 
 // RunWithEnv executes the given command and argv with extra environment values.
@@ -26,6 +42,10 @@ func (r *Runner) RunWithEnv(env map[string]string, name string, args ...string) 
 	if len(env) > 0 {
 		cmd.Env = mergedEnv(env)
 	}
+	return run(cmd)
+}
+
+func run(cmd *exec.Cmd) error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%w: %s", err, string(output))

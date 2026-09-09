@@ -108,7 +108,7 @@ YAML
 facet_apply work
 echo "  same-profile AI narrowing exited cleanly"
 
-assert_file_contains "$HOME/.mock-ai" "npx skills remove frontend-design -a cursor -g -y"
+assert_file_contains "$HOME/.mock-ai" "npx skills remove frontend-design -g -y"
 echo "  cursor skill removed on same-profile narrowing"
 
 assert_file_contains "$HOME/.cursor/cli-config.json" '"allow": []'

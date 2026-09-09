@@ -2,12 +2,59 @@ package ai
 
 import (
 	"errors"
+	"github.com/stretchr/testify/require"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"facet/internal/common/execrunner"
 )
+
+func TestNPXSkillsManager_StaleLockIsNotInstalled(t *testing.T) {
+	lockPath := filepath.Join(t.TempDir(), ".skill-lock.json")
+	require.NoError(t, os.WriteFile(lockPath, []byte(`{"skills":{"stale":{"source":"org/repo"},"native-copy":{"source":"org/repo"}}}`), 0o600))
+	runner := &mockRunner{output: []byte(`[{"name":"native-copy","path":"/isolated/.pi/agent/skills/native-copy"}]`)}
+	mgr := NewNPXSkillsManager(runner, lockPath)
+	names, err := mgr.InstalledForSource("org/repo")
+	require.NoError(t, err)
+	require.Equal(t, []string{"native-copy"}, names)
+}
+
+func TestNPXSkillsManager_GlobalRemoveVerifiesCleanup(t *testing.T) {
+	for _, tc := range []struct {
+		name, lock, inventory string
+		failed                bool
+	}{
+		{"clean", `{}`, `[]`, false},
+		{"stale lock", `{"example":{"source":"org/repo"}}`, `[]`, true},
+		{"remaining files", `{}`, `[{"name":"example"}]`, true},
+		{"invalid inventory", `{}`, `invalid`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lockPath := filepath.Join(t.TempDir(), ".skill-lock.json")
+			require.NoError(t, os.WriteFile(lockPath, []byte(`{"skills":`+tc.lock+`}`), 0o600))
+			runner := &mockRunner{output: []byte(tc.inventory)}
+			err := NewNPXSkillsManager(runner, lockPath).Remove([]string{"example"}, nil)
+			require.Equal(t, tc.failed, err != nil)
+			require.Contains(t, runner.commands, "npx skills remove example -g -y")
+		})
+	}
+}
+
+func TestNPXSkillsManager_NativeOnlyUsesCopy(t *testing.T) {
+	for _, tc := range []struct {
+		agents []string
+		copy   bool
+	}{
+		{[]string{"claude-code", "pi"}, true},
+		{[]string{"codex", "cursor"}, false},
+		{[]string{"claude-code", "codex", "pi"}, false},
+	} {
+		runner := &mockRunner{}
+		require.NoError(t, NewNPXSkillsManager(runner, "").Install("org/repo", []string{"example"}, tc.agents))
+		require.Equal(t, tc.copy, contains(runner.commands[1], "--copy"))
+	}
+}
 
 func TestNPXSkillsManager_Install_ChecksNPX(t *testing.T) {
 	runner := &mockRunner{}
@@ -149,6 +196,7 @@ func TestNPXSkillsManager_Install_PreservesArgumentBoundaries(t *testing.T) {
 		"claude-code",
 		"-g",
 		"-y",
+		"--copy",
 	}
 
 	if len(got) != len(want) {
@@ -348,7 +396,7 @@ func TestNPXSkillsManager_Install_AllSkillsEmptySliceUsesSkillWildcard(t *testin
 		t.Fatalf("Install returned unexpected error: %v", err)
 	}
 
-	want := "npx skills add @my-org/skills --skill * -a claude-code -g -y"
+	want := "npx skills add @my-org/skills --skill * -a claude-code -g -y --copy"
 	if runner.commands[1] != want {
 		t.Errorf("unexpected install command:\n  got:  %q\n  want: %q", runner.commands[1], want)
 	}
@@ -367,7 +415,7 @@ func TestNPXSkillsManager_InstalledForSource(t *testing.T) {
 		t.Fatalf("failed to write lock file: %v", err)
 	}
 
-	mgr := NewNPXSkillsManager(&mockRunner{}, lockPath)
+	mgr := NewNPXSkillsManager(&mockRunner{output: []byte(`[{"name":"skill-a"},{"name":"skill-b"}]`)}, lockPath)
 
 	got, err := mgr.InstalledForSource("@org/skills")
 	if err != nil {

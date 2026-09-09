@@ -510,21 +510,51 @@ AI skill reconciliation is stateful: when a previously managed source is removed
 or narrowed on a later apply, facet removes only the no-longer-declared skills
 for the affected agents before recording the new state.
 
-The skills CLI uses `~/.agents/skills` as shared canonical storage for default
-symlink installs. Before invoking removal, facet groups orphaned skills by source
-and complete affected-agent set. Each grouped removal is sent as one `npx skills
-remove` command so the CLI can delete the canonical skill directory when no
-remaining detected agent uses it. If another detected agent still uses the skill,
-the CLI preserves the shared canonical directory.
+Codex and Cursor consume shared storage at `~/.agents/skills`. Fully removed
+Facet-managed skills are grouped by source and removed through `npx skills
+remove <names> -g -y` without agent filters. Removal applies to those skill names
+across all agents supported by the CLI, including consumers outside the profile
+such as Cline. This lets the CLI remove both shared files and lock metadata.
+Unrelated skill names are not pruned. Existing Facet state identifies ownership;
+the global lock alone cannot establish which skills Facet manages.
+Every removal command runs in an empty temporary directory, preventing CLI
+fallback paths for agents without global directories from deleting same-named
+project-local skills in the caller's working directory.
 
-After installing named skills, facet post-verifies each requested name against
-the skill lock (`~/.agents/.skill-lock.json`). Only names confirmed present in
-the lock are recorded in state. Missing names produce a non-fatal warning and are
-excluded from state, preventing phantom orphan-removal entries on future applies.
-If the lock is unreadable, facet falls back to recording all requested names and
-warns. This mirrors the "all skills" path by recording only names confirmed by
-the lock; named installs additionally fall back to requested names on read error
-because those names are available.
+If a skill remains desired by a shared agent, removal uses the complete dropped
+agent set and retains shared storage. Unknown agent types conservatively retain
+shared storage as well. An agent reduction leaving only Claude Code and/or Pi
+uses a global removal followed by native-only installation with `--copy`.
+Native-only installs always use copies; shared-agent installs cannot avoid
+`.agents/skills` via `--copy`.
+
+facet reads the CLI's global lock at `~/.agents/.skill-lock.json`, or
+`$XDG_STATE_HOME/skills/.skill-lock.json`. Only the CLI writes this file. Global
+cleanup succeeds only when both the lock entry and the CLI installed inventory
+are absent. Failed cleanup keeps the source's previous records in the existing
+Facet state and defers its installs for retry; failed profile-switch unapply
+also retains previous AI state for reconciliation. No extra ownership store is
+introduced. Legacy all-source state resolves cleanup candidates from the lock,
+including stale entries, and preserves concrete failed names in existing state
+even if the lock entry disappears. Failed unapply expands legacy skill records
+in its supplied previous state so the caller can retry them. Agent-scoped
+removals still rely on CLI exit status; the global absence check does not apply
+while a shared copy remains desired.
+
+Post-install verification intersects source-matching lock entries with `skills
+list -g --json`, which also recognizes native copies. Stale lock-only entries
+are excluded from new Facet state. Missing names warn; unreadable verification
+falls back to requested names for named installs and warns without inferring
+names for all-source installs. Historical remnants already absent from Facet
+state require explicit cleanup and are not globally pruned.
+
+The hermetic mock E2E suites cover reconciliation and retry behavior. A separate
+`make test-skills-integration` gate runs the actual Facet binary with the pinned
+skills CLI 1.5.25, an isolated home, and a local Git fixture accessed through URL
+rewriting. It verifies shared-directory and lock deletion with Cline detected,
+native-copy transitions, dangling links, stale metadata, unrelated-skill
+preservation, repeated apply/update, and XDG lock paths. CI runs it on macOS and
+Linux; set `FACET_SKILLS_CLI` to the installed package's `bin/cli.mjs` to run locally.
 
 ---
 
