@@ -510,6 +510,13 @@ AI skill reconciliation is stateful: when a previously managed source is removed
 or narrowed on a later apply, facet removes only the no-longer-declared skills
 for the affected agents before recording the new state.
 
+The skills CLI uses `~/.agents/skills` as shared canonical storage for default
+symlink installs. Before invoking removal, facet groups orphaned skills by source
+and complete affected-agent set. Each grouped removal is sent as one `npx skills
+remove` command so the CLI can delete the canonical skill directory when no
+remaining detected agent uses it. If another detected agent still uses the skill,
+the CLI preserves the shared canonical directory.
+
 After installing named skills, facet post-verifies each requested name against
 the skill lock (`~/.agents/.skill-lock.json`). Only names confirmed present in
 the lock are recorded in state. Missing names produce a non-fatal warning and are

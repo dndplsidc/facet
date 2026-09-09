@@ -241,6 +241,14 @@ func (o *Orchestrator) applySkills(config EffectiveAIConfig, previousState *AISt
 	}
 
 	if previousState != nil {
+		removals := make(map[skillID]map[string]struct{})
+		queueRemoval := func(id skillID, agent string) {
+			if _, exists := removals[id]; !exists {
+				removals[id] = make(map[string]struct{})
+			}
+			removals[id][agent] = struct{}{}
+		}
+
 		for _, prevSkill := range previousState.Skills {
 			for _, agent := range prevSkill.Agents {
 				if prevSkill.Name == "" {
@@ -257,12 +265,8 @@ func (o *Orchestrator) applySkills(config EffectiveAIConfig, previousState *AISt
 					if len(skillsToRemove) == 0 {
 						continue
 					}
-					if err := o.reporter.ProgressStep("  -> skills remove "+prevSkill.Source+" "+agent, func() error {
-						return o.skillsManager.Remove(skillsToRemove, []string{agent})
-					}); err != nil {
-						o.reporter.Warning(fmt.Sprintf("failed to remove orphan skills from %q for %q: %v", prevSkill.Source, agent, err))
-					} else {
-						o.reporter.Success(fmt.Sprintf("removed orphan skills %v from %s", skillsToRemove, agent))
+					for _, skillName := range skillsToRemove {
+						queueRemoval(skillID{source: prevSkill.Source, name: skillName}, agent)
 					}
 					continue
 				}
@@ -277,13 +281,39 @@ func (o *Orchestrator) applySkills(config EffectiveAIConfig, previousState *AISt
 						continue
 					}
 				}
-				if err := o.reporter.ProgressStep("  -> skills remove "+prevSkill.Name+" "+agent, func() error {
-					return o.skillsManager.Remove([]string{prevSkill.Name}, []string{agent})
-				}); err != nil {
-					o.reporter.Warning(fmt.Sprintf("failed to remove orphan skill %q from %q: %v", prevSkill.Name, agent, err))
-				} else {
-					o.reporter.Success(fmt.Sprintf("removed orphan skill %q from %s", prevSkill.Name, agent))
-				}
+				queueRemoval(skillID{source: prevSkill.Source, name: prevSkill.Name}, agent)
+			}
+		}
+
+		removalGroups := make(map[skillGroupKey][]string)
+		for id, agentSet := range removals {
+			agents := sortedSetKeys(agentSet)
+			key := skillGroupKey{source: id.source, agents: strings.Join(agents, ",")}
+			removalGroups[key] = append(removalGroups[key], id.name)
+		}
+
+		removalKeys := make([]skillGroupKey, 0, len(removalGroups))
+		for key := range removalGroups {
+			removalKeys = append(removalKeys, key)
+		}
+		sort.Slice(removalKeys, func(i, j int) bool {
+			if removalKeys[i].source != removalKeys[j].source {
+				return removalKeys[i].source < removalKeys[j].source
+			}
+			return removalKeys[i].agents < removalKeys[j].agents
+		})
+
+		for _, key := range removalKeys {
+			skills := removalGroups[key]
+			sort.Strings(skills)
+			agents := strings.Split(key.agents, ",")
+			label := "  -> skills remove " + strings.Join(skills, ",") + " " + key.agents
+			if err := o.reporter.ProgressStep(label, func() error {
+				return o.skillsManager.Remove(skills, agents)
+			}); err != nil {
+				o.reporter.Warning(fmt.Sprintf("failed to remove orphan skills %v from %v: %v", skills, agents, err))
+			} else {
+				o.reporter.Success(fmt.Sprintf("removed orphan skills %v from %s", skills, strings.Join(agents, ", ")))
 			}
 		}
 	}

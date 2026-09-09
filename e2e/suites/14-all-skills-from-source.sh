@@ -123,6 +123,9 @@ YAML
 
 : > "$HOME/.mock-ai"
 facet_apply work
+assert_file_contains "$HOME/.mock-ai" "npx skills remove skill-a skill-b -a claude-code -a codex -a cursor -a pi -g -y"
+assert_file_not_contains "$HOME/.mock-ai" "npx skills remove skill-a -a claude-code"
+assert_file_not_contains "$HOME/.mock-ai" "npx skills remove skill-b -a claude-code"
 echo "  applied specific skills"
 
 # Now switch to "all"
@@ -193,8 +196,7 @@ YAML
 
 : > "$HOME/.mock-ai"
 facet_apply work
-assert_file_contains "$HOME/.mock-ai" "npx skills remove skill-a -a claude-code -g -y"
-assert_file_contains "$HOME/.mock-ai" "npx skills remove skill-b -a claude-code -g -y"
+assert_file_contains "$HOME/.mock-ai" "npx skills remove skill-a skill-b -a claude-code -g -y"
 assert_file_not_contains "$HOME/.mock-ai" "other-skill"
 echo "  all to nothing transition removes only resolved source skills"
 

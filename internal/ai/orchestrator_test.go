@@ -3,6 +3,7 @@ package ai
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -679,6 +680,42 @@ func TestOrchestrator_Apply_SkillOrphanRemoval_PerAgentDelta(t *testing.T) {
 	}
 }
 
+func TestOrchestrator_Apply_SkillOrphanRemoval_BatchesDroppedAgents(t *testing.T) {
+	skillsMgr := &mockSkillsMgr{}
+	orch := NewOrchestrator(nil, skillsMgr, &mockReporter{})
+
+	previousState := &AIState{
+		Permissions: map[string]PermissionState{},
+		Skills: []SkillState{
+			{
+				Source: "@org/skills",
+				Name:   "frontend-design",
+				Agents: []string{"pi", "cursor", "claude-code", "codex"},
+			},
+		},
+	}
+	config := EffectiveAIConfig{
+		"claude-code": {},
+		"codex":       {},
+		"cursor":      {},
+		"pi":          {},
+	}
+
+	_, err := orch.Apply(config, previousState)
+	if err != nil {
+		t.Fatalf("Apply returned unexpected error: %v", err)
+	}
+	if len(skillsMgr.removed) != 1 {
+		t.Fatalf("expected one batched removal, got %+v", skillsMgr.removed)
+	}
+	if !slices.Equal(skillsMgr.removed[0].skills, []string{"frontend-design"}) {
+		t.Fatalf("unexpected removed skills: %v", skillsMgr.removed[0].skills)
+	}
+	if !slices.Equal(skillsMgr.removed[0].agents, []string{"claude-code", "codex", "cursor", "pi"}) {
+		t.Fatalf("expected sorted batched agents, got %v", skillsMgr.removed[0].agents)
+	}
+}
+
 func TestOrchestrator_Apply_MCPOrphanRemoval_PerAgentDelta(t *testing.T) {
 	claudeProvider := &mockProvider{name: "claude-code"}
 	cursorProvider := &mockProvider{name: "cursor"}
@@ -960,13 +997,10 @@ func TestOrchestrator_Apply_AllSkillsFromSource_TracksResolvedStateForLaterRemov
 	if err != nil {
 		t.Fatalf("second Apply returned unexpected error: %v", err)
 	}
-	if len(skillsMgr.removed) != 2 {
-		t.Fatalf("expected 2 named removals, got %+v", skillsMgr.removed)
+	if len(skillsMgr.removed) != 1 {
+		t.Fatalf("expected one batched removal, got %+v", skillsMgr.removed)
 	}
-	sort.Slice(skillsMgr.removed, func(i, j int) bool {
-		return skillsMgr.removed[i].skills[0] < skillsMgr.removed[j].skills[0]
-	})
-	if skillsMgr.removed[0].skills[0] != "skill-a" || skillsMgr.removed[1].skills[0] != "skill-b" {
+	if !slices.Equal(skillsMgr.removed[0].skills, []string{"skill-a", "skill-b"}) {
 		t.Fatalf("expected tracked skills only to be removed, got %+v", skillsMgr.removed)
 	}
 }

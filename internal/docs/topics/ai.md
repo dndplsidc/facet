@@ -103,6 +103,12 @@ removed or narrowed to fewer skills, facet removes the no-longer-declared skills
 for the affected agents before writing the new state. This includes entries that
 were previously installed as "all skills from this source."
 
+The skills CLI uses `~/.agents/skills` as shared canonical storage for default
+symlink installs. facet batches each orphan-removal command across every affected
+agent so the CLI receives the complete removed-agent set. The CLI can then delete
+the canonical skill directory when no remaining detected agent uses it; otherwise
+the shared directory is preserved for that agent.
+
 After installing named skills, facet verifies each one against the skill lock
 (`~/.agents/.skill-lock.json`). Skills that are absent from the lock after
 install are not recorded in state and trigger a warning; they may not exist in
