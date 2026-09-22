@@ -124,35 +124,35 @@ func TestMerge_PackagesOverride(t *testing.T) {
 
 func TestMerge_ConfigsShallowMerge(t *testing.T) {
 	base := &FacetConfig{
-		Configs: map[string]string{
-			"~/.gitconfig": "configs/.gitconfig",
-			"~/.zshrc":     "configs/.zshrc",
+		Configs: map[string]OSValue{
+			"~/.gitconfig": {Value: "configs/.gitconfig"},
+			"~/.zshrc":     {Value: "configs/.zshrc"},
 		},
 	}
 	profile := &FacetConfig{
-		Configs: map[string]string{
-			"~/.gitconfig": "configs/work/.gitconfig",
-			"~/.npmrc":     "configs/work/.npmrc",
+		Configs: map[string]OSValue{
+			"~/.gitconfig": {Value: "configs/work/.gitconfig"},
+			"~/.npmrc":     {Value: "configs/work/.npmrc"},
 		},
 	}
 
 	result, err := Merge(base, profile)
 	require.NoError(t, err)
-	assert.Equal(t, "configs/work/.gitconfig", result.Configs["~/.gitconfig"])
-	assert.Equal(t, "configs/.zshrc", result.Configs["~/.zshrc"])
-	assert.Equal(t, "configs/work/.npmrc", result.Configs["~/.npmrc"])
+	assert.Equal(t, "configs/work/.gitconfig", result.Configs["~/.gitconfig"].Value)
+	assert.Equal(t, "configs/.zshrc", result.Configs["~/.zshrc"].Value)
+	assert.Equal(t, "configs/work/.npmrc", result.Configs["~/.npmrc"].Value)
 }
 
 func TestMerge_ThreeLayers(t *testing.T) {
 	base := &FacetConfig{
 		Vars:     map[string]any{"name": "Sarah"},
 		Packages: []PackageEntry{{Name: "git", Install: InstallCmd{Command: "brew install git"}}},
-		Configs:  map[string]string{"~/.gitconfig": "configs/.gitconfig"},
+		Configs:  map[string]OSValue{"~/.gitconfig": {Value: "configs/.gitconfig"}},
 	}
 	profile := &FacetConfig{
 		Vars:     map[string]any{"email": "sarah@acme.com"},
 		Packages: []PackageEntry{{Name: "docker", Install: InstallCmd{Command: "brew install docker"}}},
-		Configs:  map[string]string{"~/.npmrc": "configs/.npmrc"},
+		Configs:  map[string]OSValue{"~/.npmrc": {Value: "configs/.npmrc"}},
 	}
 	local := &FacetConfig{
 		Vars: map[string]any{"secret": "s3cret"},
@@ -187,13 +187,13 @@ func TestMerge_NilInputs(t *testing.T) {
 func TestMerge_PreApplyConcatenation(t *testing.T) {
 	base := &FacetConfig{
 		PreApply: []ScriptEntry{
-			{Name: "base-script-1", Run: "echo base1"},
-			{Name: "base-script-2", Run: "echo base2"},
+			{Name: "base-script-1", Run: OSValue{Value: "echo base1"}},
+			{Name: "base-script-2", Run: OSValue{Value: "echo base2"}},
 		},
 	}
 	overlay := &FacetConfig{
 		PreApply: []ScriptEntry{
-			{Name: "overlay-script-1", Run: "echo overlay1"},
+			{Name: "overlay-script-1", Run: OSValue{Value: "echo overlay1"}},
 		},
 	}
 
@@ -201,22 +201,22 @@ func TestMerge_PreApplyConcatenation(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, result.PreApply, 3)
 	assert.Equal(t, "base-script-1", result.PreApply[0].Name)
-	assert.Equal(t, "echo base1", result.PreApply[0].Run)
+	assert.Equal(t, "echo base1", result.PreApply[0].Run.Value)
 	assert.Equal(t, "base-script-2", result.PreApply[1].Name)
-	assert.Equal(t, "echo base2", result.PreApply[1].Run)
+	assert.Equal(t, "echo base2", result.PreApply[1].Run.Value)
 	assert.Equal(t, "overlay-script-1", result.PreApply[2].Name)
-	assert.Equal(t, "echo overlay1", result.PreApply[2].Run)
+	assert.Equal(t, "echo overlay1", result.PreApply[2].Run.Value)
 }
 
 func TestMerge_PostApplyConcatenation(t *testing.T) {
 	base := &FacetConfig{
 		PostApply: []ScriptEntry{
-			{Name: "base-script", Run: "echo base"},
+			{Name: "base-script", Run: OSValue{Value: "echo base"}},
 		},
 	}
 	overlay := &FacetConfig{
 		PostApply: []ScriptEntry{
-			{Name: "overlay-script", Run: "echo overlay"},
+			{Name: "overlay-script", Run: OSValue{Value: "echo overlay"}},
 		},
 	}
 
@@ -230,7 +230,7 @@ func TestMerge_PostApplyConcatenation(t *testing.T) {
 func TestMerge_PreApplyBaseOnly(t *testing.T) {
 	base := &FacetConfig{
 		PreApply: []ScriptEntry{
-			{Name: "base-only", Run: "echo base"},
+			{Name: "base-only", Run: OSValue{Value: "echo base"}},
 		},
 	}
 	overlay := &FacetConfig{}
@@ -245,7 +245,7 @@ func TestMerge_PostApplyOverlayOnly(t *testing.T) {
 	base := &FacetConfig{}
 	overlay := &FacetConfig{
 		PostApply: []ScriptEntry{
-			{Name: "overlay-only", Run: "echo overlay"},
+			{Name: "overlay-only", Run: OSValue{Value: "echo overlay"}},
 		},
 	}
 
@@ -268,21 +268,21 @@ func TestMerge_ScriptsBothEmpty(t *testing.T) {
 func TestMerge_ScriptsDeepCopy(t *testing.T) {
 	base := &FacetConfig{
 		PreApply: []ScriptEntry{
-			{Name: "base-script", Run: "echo base"},
+			{Name: "base-script", Run: OSValue{Value: "echo base"}},
 		},
 	}
 	overlay := &FacetConfig{
 		PreApply: []ScriptEntry{
-			{Name: "overlay-script", Run: "echo overlay"},
+			{Name: "overlay-script", Run: OSValue{Value: "echo overlay"}},
 		},
 	}
 
 	result, err := Merge(base, overlay)
 	require.NoError(t, err)
 
-	result.PreApply[0].Run = "mutated"
-	assert.Equal(t, "echo base", base.PreApply[0].Run)
-	assert.Equal(t, "echo overlay", overlay.PreApply[0].Run)
+	result.PreApply[0].Run.Value = "mutated"
+	assert.Equal(t, "echo base", base.PreApply[0].Run.Value)
+	assert.Equal(t, "echo overlay", overlay.PreApply[0].Run.Value)
 }
 
 func TestMergeAIPiExtensions_UnionsBySourceAndOverlayReplacesEntry(t *testing.T) {
@@ -314,11 +314,11 @@ func TestMergeAIPi_NilWhenAbsent(t *testing.T) {
 
 func TestAnnotateLayer_SetsConfigMetaAndScriptWorkDirs(t *testing.T) {
 	cfg := &FacetConfig{
-		Configs: map[string]string{
-			"~/.gitconfig": "configs/.gitconfig",
+		Configs: map[string]OSValue{
+			"~/.gitconfig": {Value: "configs/.gitconfig"},
 		},
-		PreApply:  []ScriptEntry{{Name: "pre", Run: "echo pre"}},
-		PostApply: []ScriptEntry{{Name: "post", Run: "echo post"}},
+		PreApply:  []ScriptEntry{{Name: "pre", Run: OSValue{Value: "echo pre"}}},
+		PostApply: []ScriptEntry{{Name: "post", Run: OSValue{Value: "echo post"}}},
 	}
 
 	AnnotateLayer(cfg, "/tmp/source-root", true)
@@ -333,9 +333,9 @@ func TestAnnotateLayer_SetsConfigMetaAndScriptWorkDirs(t *testing.T) {
 
 func TestMerge_ConfigMetaOverlayWins(t *testing.T) {
 	base := &FacetConfig{
-		Configs: map[string]string{
-			"~/.gitconfig": "configs/base/.gitconfig",
-			"~/.zshrc":     "configs/.zshrc",
+		Configs: map[string]OSValue{
+			"~/.gitconfig": {Value: "configs/base/.gitconfig"},
+			"~/.zshrc":     {Value: "configs/.zshrc"},
 		},
 		ConfigMeta: map[string]ConfigProvenance{
 			"~/.gitconfig": {SourceRoot: "/base", Materialize: true},
@@ -343,8 +343,8 @@ func TestMerge_ConfigMetaOverlayWins(t *testing.T) {
 		},
 	}
 	overlay := &FacetConfig{
-		Configs: map[string]string{
-			"~/.gitconfig": "configs/overlay/.gitconfig",
+		Configs: map[string]OSValue{
+			"~/.gitconfig": {Value: "configs/overlay/.gitconfig"},
 		},
 		ConfigMeta: map[string]ConfigProvenance{
 			"~/.gitconfig": {SourceRoot: "/overlay", Materialize: false},
@@ -378,10 +378,10 @@ func TestMerge_DeepCopiesNestedVars(t *testing.T) {
 
 func TestMerge_ScriptsPreserveWorkDir(t *testing.T) {
 	base := &FacetConfig{
-		PreApply: []ScriptEntry{{Name: "base", Run: "echo base", WorkDir: "/base"}},
+		PreApply: []ScriptEntry{{Name: "base", Run: OSValue{Value: "echo base"}, WorkDir: "/base"}},
 	}
 	overlay := &FacetConfig{
-		PreApply: []ScriptEntry{{Name: "overlay", Run: "echo overlay", WorkDir: "/overlay"}},
+		PreApply: []ScriptEntry{{Name: "overlay", Run: OSValue{Value: "echo overlay"}, WorkDir: "/overlay"}},
 	}
 
 	result, err := Merge(base, overlay)

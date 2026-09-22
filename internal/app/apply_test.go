@@ -142,8 +142,8 @@ func TestApply_DryRun_NoSideEffects(t *testing.T) {
 		Packages: []profile.PackageEntry{
 			{Name: "ripgrep", Install: profile.InstallCmd{Command: "brew install ripgrep"}},
 		},
-		Configs: map[string]string{
-			filepath.Join(stateDir, ".zshrc"): "configs/.zshrc",
+		Configs: map[string]profile.OSValue{
+			filepath.Join(stateDir, ".zshrc"): {Value: "configs/.zshrc"},
 		},
 	}
 	loader := &mockLoader{
@@ -850,10 +850,10 @@ func TestApply_RunsPreAndPostApplyScripts(t *testing.T) {
 	stateStore := &mockStateStore{}
 	baseCfg := &profile.FacetConfig{
 		PreApply: []profile.ScriptEntry{
-			{Name: "base-pre", Run: "echo base-pre"},
+			{Name: "base-pre", Run: profile.OSValue{Value: "echo base-pre"}},
 		},
 		PostApply: []profile.ScriptEntry{
-			{Name: "base-post", Run: "echo base-post"},
+			{Name: "base-post", Run: profile.OSValue{Value: "echo base-post"}},
 		},
 	}
 
@@ -864,10 +864,10 @@ func TestApply_RunsPreAndPostApplyScripts(t *testing.T) {
 			filepath.Join(cfgDir, "profiles", "work.yaml"): {
 				Extends: "base",
 				PreApply: []profile.ScriptEntry{
-					{Name: "profile-pre", Run: "echo profile-pre"},
+					{Name: "profile-pre", Run: profile.OSValue{Value: "echo profile-pre"}},
 				},
 				PostApply: []profile.ScriptEntry{
-					{Name: "profile-post", Run: "echo profile-post"},
+					{Name: "profile-post", Run: profile.OSValue{Value: "echo profile-post"}},
 				},
 			},
 			filepath.Join(stateDir, ".local.yaml"): {},
@@ -915,7 +915,7 @@ func TestApply_PreApplyScriptFailureHaltsApply(t *testing.T) {
 	mockDep := &mockDeployer{}
 	baseCfg := &profile.FacetConfig{
 		PreApply: []profile.ScriptEntry{
-			{Name: "will-fail", Run: "echo fail"},
+			{Name: "will-fail", Run: profile.OSValue{Value: "echo fail"}},
 		},
 	}
 
@@ -961,10 +961,10 @@ func TestApply_StagesFiltering(t *testing.T) {
 	mockDep := &mockDeployer{}
 	baseCfg := &profile.FacetConfig{
 		PreApply: []profile.ScriptEntry{
-			{Name: "pre", Run: "echo pre"},
+			{Name: "pre", Run: profile.OSValue{Value: "echo pre"}},
 		},
 		PostApply: []profile.ScriptEntry{
-			{Name: "post", Run: "echo post"},
+			{Name: "post", Run: profile.OSValue{Value: "echo post"}},
 		},
 		Packages: []profile.PackageEntry{
 			{Name: "git", Install: profile.InstallCmd{Command: "brew install git"}},
@@ -1131,8 +1131,8 @@ func TestApply_SameProfileSkipFailure_PreservesPreviousConfigState(t *testing.T)
 		},
 	}
 	baseCfg := &profile.FacetConfig{
-		Configs: map[string]string{
-			target: "configs/.gitconfig",
+		Configs: map[string]profile.OSValue{
+			target: {Value: "configs/.gitconfig"},
 		},
 	}
 	loader := &mockLoader{
@@ -1169,8 +1169,8 @@ func TestApply_EmitsRollbackTiming_OnConfigFailure(t *testing.T) {
 	r := &mockReporter{}
 	mockDep := &mockDeployer{err: fmt.Errorf("deploy failed")}
 	baseCfg := &profile.FacetConfig{
-		Configs: map[string]string{
-			target: "configs/.gitconfig",
+		Configs: map[string]profile.OSValue{
+			target: {Value: "configs/.gitconfig"},
 		},
 	}
 	loader := &mockLoader{
@@ -1232,7 +1232,7 @@ func TestApply_ScriptsResolveVariables(t *testing.T) {
 			"git": map[string]any{"email": "sarah@acme.com"},
 		},
 		PreApply: []profile.ScriptEntry{
-			{Name: "setup", Run: `echo "${facet:git.email}"`},
+			{Name: "setup", Run: profile.OSValue{Value: `echo "${facet:git.email}"`}},
 		},
 	}
 
@@ -1369,8 +1369,8 @@ func TestApply_UsesRemoteConfigSourceAndMaterializes(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(stateDir, ".local.yaml"), []byte(""), 0o644))
 
 	baseCfg := &profile.FacetConfig{
-		Configs: map[string]string{
-			"~/.gitconfig": "configs/.gitconfig",
+		Configs: map[string]profile.OSValue{
+			"~/.gitconfig": {Value: "configs/.gitconfig"},
 		},
 		ConfigMeta: map[string]profile.ConfigProvenance{
 			"~/.gitconfig": {
@@ -1418,10 +1418,10 @@ func TestApply_RunsRemoteScriptsFromRemoteClone(t *testing.T) {
 
 	baseCfg := &profile.FacetConfig{
 		PreApply: []profile.ScriptEntry{
-			{Name: "remote-pre", Run: "echo remote-pre", WorkDir: "/remote-root"},
+			{Name: "remote-pre", Run: profile.OSValue{Value: "echo remote-pre"}, WorkDir: "/remote-root"},
 		},
 		PostApply: []profile.ScriptEntry{
-			{Name: "remote-post", Run: "echo remote-post", WorkDir: "/remote-root"},
+			{Name: "remote-post", Run: profile.OSValue{Value: "echo remote-post"}, WorkDir: "/remote-root"},
 		},
 	}
 	runner := &mockScriptRunner{}
@@ -1431,10 +1431,10 @@ func TestApply_RunsRemoteScriptsFromRemoteClone(t *testing.T) {
 			filepath.Join(cfgDir, "profiles", "work.yaml"): {
 				Extends: "file:///tmp/base.git",
 				PreApply: []profile.ScriptEntry{
-					{Name: "profile-pre", Run: "echo profile-pre"},
+					{Name: "profile-pre", Run: profile.OSValue{Value: "echo profile-pre"}},
 				},
 				PostApply: []profile.ScriptEntry{
-					{Name: "profile-post", Run: "echo profile-post"},
+					{Name: "profile-post", Run: profile.OSValue{Value: "echo profile-post"}},
 				},
 			},
 			filepath.Join(stateDir, ".local.yaml"): {},
@@ -1474,8 +1474,8 @@ func TestApply_SameProfileInvalidTargetDoesNotTriggerOrphanCleanup(t *testing.T)
 		configs: map[string]*profile.FacetConfig{
 			filepath.Join(cfgDir, "profiles", "work.yaml"): {
 				Extends: "file:///tmp/base.git",
-				Configs: map[string]string{
-					"$UNDEFINED_TARGET/.gitconfig": "configs/.gitconfig",
+				Configs: map[string]profile.OSValue{
+					"$UNDEFINED_TARGET/.gitconfig": {Value: "configs/.gitconfig"},
 				},
 			},
 			filepath.Join(stateDir, ".local.yaml"): {},
@@ -1520,17 +1520,17 @@ func TestApply_EmitsProgressMessages(t *testing.T) {
 			filepath.Join(cfgDir, "base.yaml"): baseCfg,
 			filepath.Join(cfgDir, "profiles", "work.yaml"): {
 				Extends: "base",
-				Configs: map[string]string{
-					targetPath: "configs/.zshrc",
+				Configs: map[string]profile.OSValue{
+					targetPath: {Value: "configs/.zshrc"},
 				},
 				Packages: []profile.PackageEntry{
 					{Name: "git", Install: profile.InstallCmd{Command: "brew install git"}},
 				},
 				PreApply: []profile.ScriptEntry{
-					{Name: "setup", Run: "echo setup"},
+					{Name: "setup", Run: profile.OSValue{Value: "echo setup"}},
 				},
 				PostApply: []profile.ScriptEntry{
-					{Name: "teardown", Run: "echo teardown"},
+					{Name: "teardown", Run: profile.OSValue{Value: "echo teardown"}},
 				},
 			},
 			filepath.Join(stateDir, ".local.yaml"): {},
@@ -1597,7 +1597,7 @@ func TestApply_EmitsUnapplyProgress_OnForce(t *testing.T) {
 			filepath.Join(cfgDir, "base.yaml"): baseCfg,
 			filepath.Join(cfgDir, "profiles", "work.yaml"): {
 				Extends: "base",
-				Configs: map[string]string{prevTarget: "configs/.zshrc"},
+				Configs: map[string]profile.OSValue{prevTarget: {Value: "configs/.zshrc"}},
 			},
 			filepath.Join(stateDir, ".local.yaml"): {},
 		},
@@ -1712,8 +1712,8 @@ func TestApply_EmitsOrphanCleanupProgress(t *testing.T) {
 			filepath.Join(cfgDir, "base.yaml"): baseCfg,
 			filepath.Join(cfgDir, "profiles", "work.yaml"): {
 				Extends: "base",
-				Configs: map[string]string{
-					activeTarget: "configs/.zshrc",
+				Configs: map[string]profile.OSValue{
+					activeTarget: {Value: "configs/.zshrc"},
 				},
 			},
 			filepath.Join(stateDir, ".local.yaml"): {},

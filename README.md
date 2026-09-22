@@ -198,6 +198,43 @@ packages:
 
 If `check` exits 0, the install is skipped. If `check` is omitted, the install always runs.
 
+## Platform-Specific Configs and Hooks
+
+Keep shared settings as strings and use `macos`/`linux` maps where platforms differ:
+
+```yaml
+configs:
+  ~/.gitconfig: configs/git/shared
+  ~/.facet-profiles/zsh/conf.d/platform.sh:
+    macos: configs/zsh/macos.sh
+    linux: configs/zsh/ubuntu.sh
+  ~/.aerospace.toml:
+    macos: configs/aerospace/config.toml
+  "~/Library/Application Support/Code/User/settings.json":
+    macos: configs/vscode/settings.json
+  ~/.config/Code/User/settings.json:
+    linux: configs/vscode/settings.json
+
+post_apply:
+  - name: configure-platform
+    run:
+      macos: bash scripts/macos/configure.sh
+      linux: bash scripts/ubuntu/configure.sh
+  - name: verify-shell
+    run: zsh -n "$HOME/.zshrc"
+```
+
+Ubuntu uses `linux`; Facet does not distinguish Linux distributions or architectures.
+Missing platform entries are explicitly skipped in apply and dry-run. Inactive
+branches do not require variables, config source files, or destination environment
+variables. Selected command failures remain failures. Config sources and hook commands
+must be non-empty strings, and their OS maps accept only `macos` and `linux`.
+
+Layers merge first: a same-target config replaces the whole source value or OS map.
+Hooks append in layer order, even with the same name. Configs that become inactive
+are cleaned up on the next configs-stage apply if Facet still owns them; other stages
+leave them untouched. Package skips do not implicitly skip configs or hooks.
+
 ## Pi Extensions
 
 facet manages Pi coding-agent extensions under the AI configuration:

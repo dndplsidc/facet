@@ -47,7 +47,8 @@ name.
 ## `configs`
 
 `configs` are shallow-merged by target path. If two layers define the same target,
-the later layer wins.
+the later layer wins. The entire source string or OS map is replaced; platform
+branches are not deep-merged. OS selection happens after all layers merge.
 
 ## `pre_apply` / `post_apply`
 

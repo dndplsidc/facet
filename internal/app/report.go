@@ -103,10 +103,14 @@ func (a *App) printNoState() {
 }
 
 func (a *App) printDryRun(profileName string, resolved *profile.FacetConfig, opts ApplyOpts) error {
+	stages, err := parseStages(opts.Stages)
+	if err != nil {
+		return err
+	}
 	a.reporter.Header(fmt.Sprintf("Dry run: %s", profileName))
 
 	// Configs: show what would be deployed
-	if len(resolved.Configs) > 0 {
+	if stages["configs"] && len(resolved.Configs) > 0 {
 		a.reporter.Header("Configs to deploy")
 
 		targets := make([]string, 0, len(resolved.Configs))
@@ -116,7 +120,7 @@ func (a *App) printDryRun(profileName string, resolved *profile.FacetConfig, opt
 		sort.Strings(targets)
 
 		for _, target := range targets {
-			source := resolved.Configs[target]
+			source := resolved.Configs[target].Value
 
 			sourceSpec, err := deploy.ResolveSourcePath(source, resolved.ConfigMeta[target], opts.ConfigDir)
 			if err != nil {
@@ -141,15 +145,15 @@ func (a *App) printDryRun(profileName string, resolved *profile.FacetConfig, opt
 	}
 
 	// Pre-apply scripts
-	if len(resolved.PreApply) > 0 {
+	if stages["pre_apply"] && len(resolved.PreApply) > 0 {
 		a.reporter.Header("Pre-apply scripts to run")
 		for _, script := range resolved.PreApply {
-			a.reporter.Success(fmt.Sprintf("%-20s %s", script.Name, a.reporter.Dim(script.Run)))
+			a.reporter.Success(fmt.Sprintf("%-20s %s", script.Name, a.reporter.Dim(script.Run.Value)))
 		}
 	}
 
 	// Packages: show what would be installed
-	if len(resolved.Packages) > 0 {
+	if stages["packages"] && len(resolved.Packages) > 0 {
 		a.reporter.Header("Packages to install")
 		for _, pkg := range resolved.Packages {
 			cmd, skip := packages.GetInstallCommand(pkg, a.osName)
@@ -167,7 +171,7 @@ func (a *App) printDryRun(profileName string, resolved *profile.FacetConfig, opt
 	}
 
 	// Pi extensions
-	if resolved.AI != nil && resolved.AI.Pi != nil && len(resolved.AI.Pi.Extensions) > 0 {
+	if stages["ai"] && resolved.AI != nil && resolved.AI.Pi != nil && len(resolved.AI.Pi.Extensions) > 0 {
 		a.reporter.Header("AI Pi extensions to install")
 		for _, ext := range resolved.AI.Pi.Extensions {
 			a.reporter.Success(ext.Source)
@@ -175,27 +179,27 @@ func (a *App) printDryRun(profileName string, resolved *profile.FacetConfig, opt
 	}
 
 	// Post-apply scripts
-	if len(resolved.PostApply) > 0 {
+	if stages["post_apply"] && len(resolved.PostApply) > 0 {
 		a.reporter.Header("Post-apply scripts to run")
 		for _, script := range resolved.PostApply {
-			a.reporter.Success(fmt.Sprintf("%-20s %s", script.Name, a.reporter.Dim(script.Run)))
+			a.reporter.Success(fmt.Sprintf("%-20s %s", script.Name, a.reporter.Dim(script.Run.Value)))
 		}
 	}
 
 	// Show what would be unapplied
 	prevState, err := a.stateStore.Read(opts.StateDir)
-	if err == nil && prevState != nil {
-		shouldUnapply := opts.Force || prevState.Profile != profileName
-		if shouldUnapply && len(prevState.Configs) > 0 {
-			a.reporter.Header("Configs to remove (from previous profile)")
-			for _, cfg := range prevState.Configs {
+	if err == nil && prevState != nil && stages["configs"] {
+		removals := previewConfigRemovals(profileName, resolved, prevState, opts.Force)
+		if len(removals) > 0 {
+			a.reporter.Header("Configs to remove (previously managed)")
+			for _, cfg := range removals {
 				a.reporter.Warning(fmt.Sprintf("%-30s (%s)", cfg.Target, cfg.Strategy))
 			}
 		}
 	}
 
 	// AI: show what would be configured
-	if resolved.AI != nil {
+	if stages["ai"] && resolved.AI != nil {
 		effectiveAI := ai.Resolve(resolved.AI)
 		a.printAIDryRun(effectiveAI)
 	}
@@ -204,6 +208,30 @@ func (a *App) printDryRun(profileName string, resolved *profile.FacetConfig, opt
 	a.reporter.PrintLine("No changes were made. Run without --dry-run to apply.")
 
 	return nil
+}
+
+// previewConfigRemovals mirrors apply's target-set comparison without touching
+// files. Actual removal still goes through the deployer's ownership checks.
+func previewConfigRemovals(profileName string, resolved *profile.FacetConfig, previous *ApplyState, force bool) []deploy.ConfigResult {
+	if force || previous.Profile != profileName {
+		return append([]deploy.ConfigResult(nil), previous.Configs...)
+	}
+	targets := make(map[string]bool, len(resolved.Configs))
+	for target := range resolved.Configs {
+		expanded, err := deploy.ExpandPath(target)
+		if err != nil {
+			// Apply either aborts or preserves previous configs with --skip-failure.
+			return nil
+		}
+		targets[expanded] = true
+	}
+	var removals []deploy.ConfigResult
+	for _, cfg := range previous.Configs {
+		if !targets[cfg.Target] {
+			removals = append(removals, cfg)
+		}
+	}
+	return removals
 }
 
 func (a *App) printAIDryRun(config ai.EffectiveAIConfig) {

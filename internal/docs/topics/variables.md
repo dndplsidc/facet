@@ -29,7 +29,7 @@ Examples:
 
 ## Where Variables Are Resolved
 
-- Package install commands
+- Package install and check commands
 - Config source paths on the right side of `configs:`
 - Templated config file contents
 - Script `run` fields (in `pre_apply` and `post_apply`)
@@ -43,7 +43,10 @@ Examples:
 
 ## Undefined Variables
 
-Referencing an undefined variable is a fatal error.
+Referencing an undefined variable in the selected configuration is a fatal error.
+OS selection happens after merging and before substitution: inactive config sources,
+hook commands, and package commands do not require their variables to be defined.
+If a package has no installer for the current OS, its check is also inactive.
 
 ```text
 undefined variable: ${facet:db_url} — define it in .local.yaml or your profile's vars

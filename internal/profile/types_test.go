@@ -137,7 +137,7 @@ configs:
 
 	assert.Len(t, cfg.Packages, 2)
 	assert.Equal(t, "ripgrep", cfg.Packages[0].Name)
-	assert.Equal(t, "configs/.gitconfig", cfg.Configs["~/.gitconfig"])
+	assert.Equal(t, "configs/.gitconfig", cfg.Configs["~/.gitconfig"].Value)
 }
 
 func TestFacetConfig_UnmarshalYAML_Scripts(t *testing.T) {
@@ -158,13 +158,13 @@ post_apply:
 	require.NoError(t, err)
 	require.Len(t, cfg.PreApply, 2)
 	assert.Equal(t, "configure git", cfg.PreApply[0].Name)
-	assert.Equal(t, `git config --global user.email "test@example.com"`, cfg.PreApply[0].Run)
+	assert.Equal(t, `git config --global user.email "test@example.com"`, cfg.PreApply[0].Run.Value)
 	assert.Equal(t, "run setup", cfg.PreApply[1].Name)
-	assert.Contains(t, cfg.PreApply[1].Run, "export FOO=bar")
-	assert.Contains(t, cfg.PreApply[1].Run, "./scripts/setup.sh")
+	assert.Contains(t, cfg.PreApply[1].Run.Value, "export FOO=bar")
+	assert.Contains(t, cfg.PreApply[1].Run.Value, "./scripts/setup.sh")
 	require.Len(t, cfg.PostApply, 1)
 	assert.Equal(t, "cleanup", cfg.PostApply[0].Name)
-	assert.Equal(t, "echo done", cfg.PostApply[0].Run)
+	assert.Equal(t, "echo done", cfg.PostApply[0].Run.Value)
 }
 
 func TestFacetMeta_UnmarshalYAML(t *testing.T) {

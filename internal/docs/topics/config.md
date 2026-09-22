@@ -113,7 +113,7 @@ All config layers use this schema:
 | `extends` | string | Profile files only. Base locator. Supports local files, local directories, and git locators. |
 | `vars` | map[string]any | Variables used by `${facet:...}` substitution. Supports nested maps. |
 | `packages` | list of PackageEntry | Package install entries (with optional `check`). See `facet docs packages`. |
-| `configs` | map[string]string | Target path to source path. See `facet docs deploy`. |
+| `configs` | map of targets to strings or OS maps | Target path to shared or platform-specific source path. See `facet docs deploy`. |
 | `pre_apply` | list of ScriptEntry | Scripts run before package install. See `facet docs scripts`. |
 | `post_apply` | list of ScriptEntry | Scripts run after package install. See `facet docs scripts`. |
 | `ai` | AIConfig | AI agent configuration, including Pi extensions under `ai.pi`. See `facet docs ai` and `facet docs pi`. |
