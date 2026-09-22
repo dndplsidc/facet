@@ -256,6 +256,31 @@ configs:
 
 ## 6. Config Deployment
 
+### Platform selection
+
+Config sources accept either a shared string or a map keyed by `macos` and `linux`.
+For example, `~/.config/tool/config: {macos: configs/tool/macos, linux: configs/tool/linux}`
+selects a source for one destination; separate destinations can each have a single-OS
+map. Ubuntu uses `linux`; distribution and architecture selection are not supported.
+Config source and hook OS maps require non-empty strings and reject unknown OS keys,
+empty maps, and null values.
+
+Merge layers before selecting the OS, and select before resolving `${facet:...}`
+variables, expanding destinations, or inspecting sources. Same-target config overrides
+replace the entire value, not individual OS branches. Preserve each selected source's
+provenance and materialization mode. Inactive configs do not enter deployment state;
+previously managed configs that become inactive use existing orphan cleanup and
+ownership checks when the configs stage is selected.
+
+Both `pre_apply` and `post_apply` hook `run` values accept the same shared-string or
+OS-map forms. Hooks still concatenate in layer order without name deduplication and
+retain their owning working directories. Missing platform commands are skipped;
+selected hook failures stop apply. Hooks and configs report skips in apply and dry-run
+for requested stages. No package-to-config or package-to-hook dependency is inferred.
+
+Package install/check OS selection also precedes variable resolution. Packages without
+a selected installer keep their existing skip result, without resolving their checks.
+
 ### Target path expansion
 
 Config target paths are absolute and support environment variable expansion:
@@ -279,7 +304,7 @@ Source paths are resolved relative to the owning source root for the layer that 
 | Directory | N/A | Symlink target → source |
 | File or directory from a git-based base without `${facet:` | N/A | Copy target contents into place |
 
-Facet reads every source file to check for `${facet:`. Directories are symlinked for local sources and copied for git-based bases.
+Facet reads every selected source file to check for `${facet:`. Directories are symlinked for local sources and copied for git-based bases.
 
 ### Symlink behavior
 
@@ -355,7 +380,7 @@ Profile switching is: **unapply the current profile, then apply the new one.**
 - Deploys all config files (symlink, template, or copy)
 - Writes new `.state.json`
 
-With `--verbose`, each apply step and selected stage item reports an outcome and elapsed duration; non-verbose output remains the final summary only.
+With `--verbose`, each apply step and selected stage item reports an outcome and elapsed duration; non-verbose output includes the final summary and explicit platform skips.
 
 ### Same-profile reapply
 
@@ -367,11 +392,12 @@ Running `facet apply <same-profile>` just applies — overwrites configs to conv
 
 ### --dry-run flag
 
-`--dry-run` runs the full load → merge → resolve pipeline (steps 1–7), catching any YAML, profile, or variable errors, then prints what would happen without making any changes:
+`--dry-run` runs the full load → merge → select OS → resolve pipeline (steps 1–7), catching any YAML, profile, or variable errors, then prints what would happen without making any changes:
 
+- Requested stages only, with explicit platform skips for configs and hooks
 - Packages that would be installed (with per-OS command resolution)
 - Configs that would be deployed (with auto-detected strategy — symlink, template, or copy)
-- Configs that would be removed (if switching profiles or using `--force`)
+- Previously managed configs selected for removal (profile switching, `--force`, or orphan cleanup on same-profile reapply); actual removal still checks ownership
 
 No side effects — no package installs, no symlinks, no file writes, no state changes. Steps 8–11 are skipped entirely.
 

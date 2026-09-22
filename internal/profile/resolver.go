@@ -14,7 +14,7 @@ var facetVarPattern = regexp.MustCompile(`\$\{facet:([a-zA-Z0-9_.]+)\}`)
 func Resolve(cfg *FacetConfig) (*FacetConfig, error) {
 	result := &FacetConfig{
 		Vars:       cloneVars(cfg.Vars), // vars themselves are not resolved (no recursion)
-		Configs:    make(map[string]string, len(cfg.Configs)),
+		Configs:    make(map[string]OSValue, len(cfg.Configs)),
 		ConfigMeta: mergeConfigMeta(nil, cfg.ConfigMeta),
 	}
 
@@ -29,7 +29,7 @@ func Resolve(cfg *FacetConfig) (*FacetConfig, error) {
 
 	// Resolve config source paths (values), but NOT target paths (keys)
 	for target, source := range cfg.Configs {
-		resolvedSource, err := substituteVars(source, cfg.Vars)
+		resolvedSource, err := resolveOSValue(source, cfg.Vars)
 		if err != nil {
 			return nil, err
 		}
@@ -45,7 +45,7 @@ func Resolve(cfg *FacetConfig) (*FacetConfig, error) {
 	if cfg.PreApply != nil {
 		result.PreApply = make([]ScriptEntry, len(cfg.PreApply))
 		for i, script := range cfg.PreApply {
-			resolvedRun, err := substituteVars(script.Run, cfg.Vars)
+			resolvedRun, err := resolveOSValue(script.Run, cfg.Vars)
 			if err != nil {
 				return nil, fmt.Errorf("pre_apply[%d] %q: %w", i, script.Name, err)
 			}
@@ -60,7 +60,7 @@ func Resolve(cfg *FacetConfig) (*FacetConfig, error) {
 	if cfg.PostApply != nil {
 		result.PostApply = make([]ScriptEntry, len(cfg.PostApply))
 		for i, script := range cfg.PostApply {
-			resolvedRun, err := substituteVars(script.Run, cfg.Vars)
+			resolvedRun, err := resolveOSValue(script.Run, cfg.Vars)
 			if err != nil {
 				return nil, fmt.Errorf("post_apply[%d] %q: %w", i, script.Name, err)
 			}

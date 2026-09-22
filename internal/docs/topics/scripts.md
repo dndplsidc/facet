@@ -26,7 +26,31 @@ post_apply:
 Each entry has:
 
 - `name`: human-readable label shown in the output
-- `run`: shell command or multi-line script executed via `sh -c`
+- `run`: a shared shell command/multi-line script, or a `macos`/`linux` map of commands, executed via `sh -c`
+
+## Platform-Specific Hooks
+
+```yaml
+post_apply:
+  - name: configure-platform
+    run:
+      macos: bash scripts/macos/configure.sh
+      linux: bash scripts/ubuntu/configure.sh
+  - name: install-launch-agent
+    run:
+      macos: bash scripts/macos/install-agent.sh
+  - name: verify-shell
+    run: zsh -n "$HOME/.zshrc"
+```
+
+A missing OS entry skips the hook and reports the skip in apply and dry-run.
+Commands and variables in inactive branches are not resolved or executed. Selected
+hooks keep the originating layer's working directory and run in the existing order.
+A selected command failure remains fatal; a platform skip is not a failure.
+
+Use `linux` for Ubuntu. OS maps accept only `macos` and `linux`, with non-empty
+string values. Empty maps, unknown OS names, missing `run`, and null commands are
+errors. Quote standalone commands such as `run: 'true'` so YAML treats them as strings.
 
 ## Variable Resolution
 

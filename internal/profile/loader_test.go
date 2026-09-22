@@ -52,7 +52,7 @@ configs:
 	assert.Equal(t, "Sarah", cfg.Vars["git_name"])
 	assert.Len(t, cfg.Packages, 1)
 	assert.Equal(t, "git", cfg.Packages[0].Name)
-	assert.Equal(t, "configs/.gitconfig", cfg.Configs["~/.gitconfig"])
+	assert.Equal(t, "configs/.gitconfig", cfg.Configs["~/.gitconfig"].Value)
 }
 
 func TestLoadConfig_WithAIPiExtensions(t *testing.T) {

@@ -11,6 +11,39 @@ configs:
   ~/.zshrc: configs/.zshrc
 ```
 
+## Platform-Specific Configs
+
+Each source can be a shared string or a map keyed by `macos` and `linux`:
+
+```yaml
+configs:
+  ~/.gitconfig: configs/git/shared
+  ~/.facet-profiles/zsh/conf.d/platform.sh:
+    macos: configs/zsh/macos.sh
+    linux: configs/zsh/ubuntu.sh
+  ~/.aerospace.toml:
+    macos: configs/aerospace/config.toml
+  "~/Library/Application Support/Code/User/settings.json":
+    macos: configs/vscode/settings.json
+  ~/.config/Code/User/settings.json:
+    linux: configs/vscode/settings.json
+```
+
+Facet uses `linux` for Ubuntu and other Linux distributions; it does not select by
+distribution or architecture. Missing OS entries are explicitly reported as skipped
+in apply and dry-run. Skipped entries do not require their source files, variables,
+or target environment variables to exist. Config sources and OS values must be
+non-empty strings; unknown OS keys, empty maps, and null values are errors.
+
+Layers merge before OS selection. A later declaration for the same destination
+replaces the entire source value, including any OS map. Different destinations
+remain separate declarations, so scope each destination to its intended OS.
+
+Only selected configs are recorded in deployment state. If a previously managed
+config becomes inactive, a subsequent apply of the configs stage removes it using
+the normal ownership checks. Dry-run lists that target as a removal candidate without
+changing it. Applying only other stages leaves it untouched.
+
 ## Target Path Expansion
 
 Target paths support environment expansion:

@@ -16,7 +16,7 @@ type FacetConfig struct {
 	Extends    string                      `yaml:"extends,omitempty"`
 	Vars       map[string]any              `yaml:"vars,omitempty"`
 	Packages   []PackageEntry              `yaml:"packages,omitempty"`
-	Configs    map[string]string           `yaml:"configs,omitempty"`
+	Configs    map[string]OSValue          `yaml:"configs,omitempty"`
 	ConfigMeta map[string]ConfigProvenance `yaml:"-"`
 	AI         *AIConfig                   `yaml:"ai,omitempty"`
 	PreApply   []ScriptEntry               `yaml:"pre_apply,omitempty"`
@@ -25,9 +25,9 @@ type FacetConfig struct {
 
 // ScriptEntry is a named shell command run during facet apply.
 type ScriptEntry struct {
-	Name    string `yaml:"name"`
-	Run     string `yaml:"run"`
-	WorkDir string `yaml:"-"`
+	Name    string  `yaml:"name"`
+	Run     OSValue `yaml:"run"`
+	WorkDir string  `yaml:"-"`
 }
 
 type ConfigProvenance struct {

@@ -57,6 +57,22 @@ func ValidateProfile(cfg *FacetConfig) error {
 // ValidateMergedConfig checks invariants that can only be validated after all
 // profile layers have been merged together.
 func ValidateMergedConfig(cfg *FacetConfig) error {
+	for target, source := range cfg.Configs {
+		if err := source.Validate(); err != nil {
+			return fmt.Errorf("configs[%q]: %w", target, err)
+		}
+	}
+	for _, stage := range []struct {
+		name    string
+		scripts []ScriptEntry
+	}{{"pre_apply", cfg.PreApply}, {"post_apply", cfg.PostApply}} {
+		for i, script := range stage.scripts {
+			if err := script.Run.Validate(); err != nil {
+				return fmt.Errorf("%s[%d] %q run: %w", stage.name, i, script.Name, err)
+			}
+		}
+	}
+
 	if cfg.AI == nil {
 		return nil
 	}

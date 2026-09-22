@@ -59,3 +59,10 @@ or a per-OS map. If `check` is omitted, the install command always runs.
 - There is no package manager detection; you provide the full command
 - Base and profile packages are unioned by `name`
 - If the same package name appears in multiple layers, the later layer wins
+
+## Platform Selection and Variables
+
+During apply and dry-run, only the current OS's install and check commands undergo
+variable substitution. A package without an installer for that OS is skipped before
+its check is resolved. Package skips do not implicitly skip configs or hooks;
+use their own OS maps to declare platform-specific behavior.

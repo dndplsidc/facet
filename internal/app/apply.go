@@ -166,14 +166,23 @@ func (a *App) Apply(profileName string, opts ApplyOpts) (applyErr error) {
 		return err
 	}
 
+	// Select the platform before resolving variables, paths, or commands.
+	selected, skipped := profile.SelectOS(merged, a.osName)
+
 	// Step 5: Resolve variables
 	var resolved *profile.FacetConfig
 	if err := a.reporter.ProgressStep("Resolving variables", func() error {
 		var stepErr error
-		resolved, stepErr = profile.Resolve(merged)
+		resolved, stepErr = profile.Resolve(selected)
 		return stepErr
 	}); err != nil {
 		return err
+	}
+
+	for _, entry := range skipped {
+		if stages[entry.Stage] {
+			a.reporter.PrintLine(fmt.Sprintf("%s %s: skipped (not configured for %s)", entry.Stage, entry.Name, a.osName))
+		}
 	}
 
 	// Dry-run: preview what would happen without side effects
@@ -309,7 +318,7 @@ func (a *App) Apply(profileName string, opts ApplyOpts) (applyErr error) {
 		sort.Strings(targets)
 
 		for _, target := range targets {
-			source := resolved.Configs[target]
+			source := resolved.Configs[target].Value
 
 			var sourceSpec deploy.SourceSpec
 			err := a.reporter.ProgressStep("  -> "+target+" source", func() error {
@@ -526,7 +535,7 @@ func (a *App) runScripts(scripts []profile.ScriptEntry, fallbackDir, stageName s
 			dir = fallbackDir
 		}
 		if err := a.reporter.ProgressStep("  -> "+script.Name, func() error {
-			return a.scriptRunner.Run(script.Run, dir)
+			return a.scriptRunner.Run(script.Run.Value, dir)
 		}); err != nil {
 			return fmt.Errorf("%s script %q failed: %w", stageName, script.Name, err)
 		}

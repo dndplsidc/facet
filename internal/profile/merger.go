@@ -109,16 +109,16 @@ func mergePackages(base, overlay []PackageEntry) []PackageEntry {
 }
 
 // mergeConfigs shallow-merges two config maps. Overlay wins on same target key.
-func mergeConfigs(base, overlay map[string]string) map[string]string {
+func mergeConfigs(base, overlay map[string]OSValue) map[string]OSValue {
 	if base == nil && overlay == nil {
 		return nil
 	}
-	result := make(map[string]string)
+	result := make(map[string]OSValue)
 	for k, v := range base {
-		result[k] = v
+		result[k] = v.Clone()
 	}
 	for k, v := range overlay {
-		result[k] = v
+		result[k] = v.Clone()
 	}
 	return result
 }
@@ -193,10 +193,10 @@ func mergeScripts(base, overlay []ScriptEntry) []ScriptEntry {
 	}
 	result := make([]ScriptEntry, 0, len(base)+len(overlay))
 	for _, script := range base {
-		result = append(result, ScriptEntry{Name: script.Name, Run: script.Run, WorkDir: script.WorkDir})
+		result = append(result, ScriptEntry{Name: script.Name, Run: script.Run.Clone(), WorkDir: script.WorkDir})
 	}
 	for _, script := range overlay {
-		result = append(result, ScriptEntry{Name: script.Name, Run: script.Run, WorkDir: script.WorkDir})
+		result = append(result, ScriptEntry{Name: script.Name, Run: script.Run.Clone(), WorkDir: script.WorkDir})
 	}
 	return result
 }

@@ -63,6 +63,10 @@ What it does:
 9. Applies AI configuration, including managed Pi extensions (if `ai` stage)
 10. Writes `.state.json`
 
+Apply and dry-run select `macos` or `linux` after merging, before resolving variables
+or paths. Both report platform skips for requested stages; dry-run lists only the
+requested stages. See `facet docs deploy` and `facet docs scripts` for OS maps.
+
 ## `facet status`
 
 Show the current applied state.

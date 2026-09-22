@@ -27,14 +27,14 @@ func TestResolve_NestedVar(t *testing.T) {
 				"email": "sarah@acme.com",
 			},
 		},
-		Configs: map[string]string{
-			"~/.gitconfig": "configs/${facet:git.email}/gitconfig",
+		Configs: map[string]OSValue{
+			"~/.gitconfig": {Value: "configs/${facet:git.email}/gitconfig"},
 		},
 	}
 
 	resolved, err := Resolve(cfg)
 	require.NoError(t, err)
-	assert.Equal(t, "configs/sarah@acme.com/gitconfig", resolved.Configs["~/.gitconfig"])
+	assert.Equal(t, "configs/sarah@acme.com/gitconfig", resolved.Configs["~/.gitconfig"].Value)
 }
 
 func TestResolve_DeeplyNestedVar(t *testing.T) {
@@ -186,21 +186,21 @@ func TestResolve_PerOSInstallCommand(t *testing.T) {
 func TestResolve_ConfigSourcePaths(t *testing.T) {
 	cfg := &FacetConfig{
 		Vars: map[string]any{"env": "work"},
-		Configs: map[string]string{
-			"~/.gitconfig": "configs/${facet:env}/.gitconfig",
+		Configs: map[string]OSValue{
+			"~/.gitconfig": {Value: "configs/${facet:env}/.gitconfig"},
 		},
 	}
 
 	resolved, err := Resolve(cfg)
 	require.NoError(t, err)
-	assert.Equal(t, "configs/work/.gitconfig", resolved.Configs["~/.gitconfig"])
+	assert.Equal(t, "configs/work/.gitconfig", resolved.Configs["~/.gitconfig"].Value)
 }
 
 func TestResolve_ConfigTargetPathsNotResolved(t *testing.T) {
 	cfg := &FacetConfig{
 		Vars: map[string]any{"dir": "custom"},
-		Configs: map[string]string{
-			"~/${facet:dir}/.gitconfig": "configs/.gitconfig",
+		Configs: map[string]OSValue{
+			"~/${facet:dir}/.gitconfig": {Value: "configs/.gitconfig"},
 		},
 	}
 
@@ -216,8 +216,8 @@ func TestResolve_NoVarsNoError(t *testing.T) {
 		Packages: []PackageEntry{
 			{Name: "git", Install: InstallCmd{Command: "brew install git"}},
 		},
-		Configs: map[string]string{
-			"~/.zshrc": "configs/.zshrc",
+		Configs: map[string]OSValue{
+			"~/.zshrc": {Value: "configs/.zshrc"},
 		},
 	}
 
@@ -374,7 +374,7 @@ func TestResolve_PreApplyScriptVars(t *testing.T) {
 			},
 		},
 		PreApply: []ScriptEntry{
-			{Name: "configure git", Run: `git config --global user.email "${facet:git.email}"`},
+			{Name: "configure git", Run: OSValue{Value: `git config --global user.email "${facet:git.email}"`}},
 		},
 	}
 
@@ -382,28 +382,28 @@ func TestResolve_PreApplyScriptVars(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, resolved.PreApply, 1)
 	assert.Equal(t, "configure git", resolved.PreApply[0].Name)
-	assert.Equal(t, `git config --global user.email "sarah@acme.com"`, resolved.PreApply[0].Run)
+	assert.Equal(t, `git config --global user.email "sarah@acme.com"`, resolved.PreApply[0].Run.Value)
 }
 
 func TestResolve_PostApplyScriptVars(t *testing.T) {
 	cfg := &FacetConfig{
 		Vars: map[string]any{"name": "Sarah"},
 		PostApply: []ScriptEntry{
-			{Name: "greet", Run: "echo ${facet:name}"},
+			{Name: "greet", Run: OSValue{Value: "echo ${facet:name}"}},
 		},
 	}
 
 	resolved, err := Resolve(cfg)
 	require.NoError(t, err)
 	require.Len(t, resolved.PostApply, 1)
-	assert.Equal(t, "echo Sarah", resolved.PostApply[0].Run)
+	assert.Equal(t, "echo Sarah", resolved.PostApply[0].Run.Value)
 }
 
 func TestResolve_ScriptNameNotResolved(t *testing.T) {
 	cfg := &FacetConfig{
 		Vars: map[string]any{"tool": "git"},
 		PreApply: []ScriptEntry{
-			{Name: "setup ${facet:tool}", Run: "echo hello"},
+			{Name: "setup ${facet:tool}", Run: OSValue{Value: "echo hello"}},
 		},
 	}
 
@@ -416,7 +416,7 @@ func TestResolve_ScriptUndefinedVar(t *testing.T) {
 	cfg := &FacetConfig{
 		Vars: map[string]any{},
 		PostApply: []ScriptEntry{
-			{Name: "broken", Run: "echo ${facet:missing}"},
+			{Name: "broken", Run: OSValue{Value: "echo ${facet:missing}"}},
 		},
 	}
 
@@ -429,22 +429,22 @@ func TestResolve_ScriptDeepCopy(t *testing.T) {
 	cfg := &FacetConfig{
 		Vars: map[string]any{"name": "Sarah"},
 		PreApply: []ScriptEntry{
-			{Name: "test", Run: "echo ${facet:name}"},
+			{Name: "test", Run: OSValue{Value: "echo ${facet:name}"}},
 		},
 	}
 
 	resolved, err := Resolve(cfg)
 	require.NoError(t, err)
 
-	resolved.PreApply[0].Run = "mutated"
-	assert.Equal(t, "echo ${facet:name}", cfg.PreApply[0].Run)
+	resolved.PreApply[0].Run.Value = "mutated"
+	assert.Equal(t, "echo ${facet:name}", cfg.PreApply[0].Run.Value)
 }
 
 func TestResolve_ConfigMetaPreserved(t *testing.T) {
 	cfg := &FacetConfig{
 		Vars: map[string]any{"env": "work"},
-		Configs: map[string]string{
-			"~/.gitconfig": "configs/${facet:env}/.gitconfig",
+		Configs: map[string]OSValue{
+			"~/.gitconfig": {Value: "configs/${facet:env}/.gitconfig"},
 		},
 		ConfigMeta: map[string]ConfigProvenance{
 			"~/.gitconfig": {SourceRoot: "/remote", Materialize: true},
@@ -463,10 +463,10 @@ func TestResolve_ScriptsPreserveWorkDir(t *testing.T) {
 	cfg := &FacetConfig{
 		Vars: map[string]any{"name": "Sarah"},
 		PreApply: []ScriptEntry{
-			{Name: "pre", Run: "echo ${facet:name}", WorkDir: "/remote"},
+			{Name: "pre", Run: OSValue{Value: "echo ${facet:name}"}, WorkDir: "/remote"},
 		},
 		PostApply: []ScriptEntry{
-			{Name: "post", Run: "printf '%s' ${facet:name}", WorkDir: "/local"},
+			{Name: "post", Run: OSValue{Value: "printf '%s' ${facet:name}"}, WorkDir: "/local"},
 		},
 	}
 
@@ -474,7 +474,7 @@ func TestResolve_ScriptsPreserveWorkDir(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, resolved.PreApply, 1)
 	require.Len(t, resolved.PostApply, 1)
-	assert.Equal(t, "echo Sarah", resolved.PreApply[0].Run)
+	assert.Equal(t, "echo Sarah", resolved.PreApply[0].Run.Value)
 	assert.Equal(t, "/remote", resolved.PreApply[0].WorkDir)
 	assert.Equal(t, "/local", resolved.PostApply[0].WorkDir)
 }
