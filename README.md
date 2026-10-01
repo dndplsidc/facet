@@ -158,6 +158,38 @@ vars:
 
 Undefined variables are a fatal error — no silent failures.
 
+### Structured YAML values
+
+Use `${facet:var.name|yaml}` to render a mapping, list, or scalar as one inline,
+flow-style YAML value. Ordinary references continue to require strings.
+
+```yaml
+# .local.yaml
+vars:
+  worker_models:
+    example-model:
+      - local_agent_id: first
+        managed_agent_id: "00123"
+    unused-model: []
+```
+
+```yaml
+# Config source
+agents:
+  models: ${facet:worker_models|yaml}
+```
+
+Use the placeholder as a complete, unquoted YAML value. Flow-style output works
+at any indentation. String values are quoted, embedded newlines are escaped,
+and IDs such as `"00123"` remain strings. Empty collections render as `{}` or `[]`.
+References inside values are not recursively resolved. Undefined variables and
+unsupported filters fail with an error. The filter serializes values; it does
+not validate the destination application's schema.
+
+Mappings merge deeply and lists are replaced by later layers. To control an
+entire model mapping locally, keep model names in `.local.yaml`; `{}` does not
+remove mapping keys inherited from a base or profile.
+
 ## Config Deployment
 
 facet auto-detects the right strategy for each file:

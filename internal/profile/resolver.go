@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
-var facetVarPattern = regexp.MustCompile(`\$\{facet:([a-zA-Z0-9_.]+)\}`)
+var facetVarPattern = regexp.MustCompile(`\$\{facet:([a-zA-Z0-9_.]+)(?:\|([a-zA-Z0-9_]+))?\}`)
 
 // Resolve substitutes all ${facet:var.name} references in the config.
 // Config target paths (map keys in Configs) are NOT resolved.
@@ -140,6 +142,24 @@ func substituteVars(s string, vars map[string]any) (string, error) {
 			return match
 		}
 		key := submatches[1]
+		filter := submatches[2]
+		if filter != "" {
+			if filter != "yaml" {
+				resolveErr = fmt.Errorf("unsupported variable filter %q in %s", filter, match)
+				return match
+			}
+			value, err := lookupVarValue(vars, key)
+			if err != nil {
+				resolveErr = err
+				return match
+			}
+			rendered, err := renderYAMLValue(value)
+			if err != nil {
+				resolveErr = fmt.Errorf("variable %s: YAML rendering failed: %w", match, err)
+				return match
+			}
+			return rendered
+		}
 
 		value, err := lookupVar(vars, key)
 		if err != nil {
@@ -294,6 +314,19 @@ func resolveMCPEntry(i int, mcp MCPEntry, vars map[string]any) (MCPEntry, error)
 // lookupVar resolves a dot-notation key against a nested vars map.
 // For example, "git.email" looks up vars["git"]["email"].
 func lookupVar(vars map[string]any, key string) (string, error) {
+	value, err := lookupVarValue(vars, key)
+	if err != nil {
+		return "", err
+	}
+	s, ok := value.(string)
+	if !ok {
+		return "", fmt.Errorf("variable ${facet:%s} resolves to a non-string value — use a more specific path or the |yaml filter", key)
+	}
+	return s, nil
+}
+
+// lookupVarValue preserves the variable's type for structured rendering.
+func lookupVarValue(vars map[string]any, key string) (any, error) {
 	parts := strings.Split(key, ".")
 	current := vars
 
@@ -304,12 +337,7 @@ func lookupVar(vars map[string]any, key string) (string, error) {
 		}
 
 		if i == len(parts)-1 {
-			// Leaf — must be a string
-			s, ok := val.(string)
-			if !ok {
-				return "", fmt.Errorf("variable ${facet:%s} resolves to a map, not a string — use a more specific path", key)
-			}
-			return s, nil
+			return val, nil
 		}
 
 		// Intermediate — must be a map
@@ -321,4 +349,33 @@ func lookupVar(vars map[string]any, key string) (string, error) {
 	}
 
 	return "", fmt.Errorf("undefined variable: ${facet:%s}", key)
+}
+
+// renderYAMLValue emits one flow-style YAML value, independent of the template's
+// indentation. Quoted strings preserve scalar types and escape embedded newlines.
+func renderYAMLValue(value any) (string, error) {
+	var node yaml.Node
+	if err := node.Encode(value); err != nil {
+		return "", err
+	}
+	setInlineYAMLStyle(&node)
+	rendered, err := yaml.Marshal(&node)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(string(rendered), "\n"), nil
+}
+
+func setInlineYAMLStyle(node *yaml.Node) {
+	switch node.Kind {
+	case yaml.MappingNode, yaml.SequenceNode:
+		node.Style = yaml.FlowStyle
+	case yaml.ScalarNode:
+		if node.Tag == "!!str" {
+			node.Style = yaml.DoubleQuotedStyle
+		}
+	}
+	for _, child := range node.Content {
+		setInlineYAMLStyle(child)
+	}
 }

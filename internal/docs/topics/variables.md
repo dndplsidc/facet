@@ -27,6 +27,43 @@ Examples:
 - `${facet:git.email}`
 - `${facet:aws.region}`
 
+## Structured YAML Values
+
+Use `${facet:var.name|yaml}` to serialize a mapping, list, or scalar as an inline
+YAML value. Ordinary `${facet:var.name}` references still require strings.
+
+```yaml
+# .local.yaml
+vars:
+  worker_models:
+    example-model:
+      - local_agent_id: first
+        managed_agent_id: "00123"
+      - local_agent_id: second
+        managed_agent_id: "11785"
+    unused-model: []
+```
+
+```yaml
+# Templated config source
+agents:
+  models: ${facet:worker_models|yaml}
+```
+
+The output uses flow-style YAML (`{"example-model": [...]}`), so it works at any
+indentation. Place the placeholder as a complete, unquoted YAML value. It can
+also be an element of a flow-style list or mapping. Do not wrap it in quotes or
+use it inside a YAML block scalar when you want a structured value.
+
+Strings are quoted and embedded newlines escaped; numeric-looking IDs stay
+strings. Empty mappings and lists render as `{}` and `[]`. Variable references
+inside the serialized value stay literal. Undefined variables and unsupported
+filters are fatal errors. The filter does not validate an application's schema.
+
+Mappings still merge deeply across layers; list values are replaced by the later
+layer. Define the model names locally if that machine should control the entire
+mapping. An empty mapping does not remove keys inherited from another layer.
+
 ## Where Variables Are Resolved
 
 - Package install and check commands
