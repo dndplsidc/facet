@@ -102,3 +102,7 @@ they still work after the temporary clone is cleaned up.
 
 When switching profiles, facet removes configs that were managed by the previous
 profile but are no longer part of the new one.
+
+Structured values use `${facet:var.name|yaml}`. Place the placeholder as an
+unquoted YAML value; the flow-style output is independent of indentation. See
+`facet docs variables` for mapping and list examples.
