@@ -17,12 +17,12 @@ import (
 )
 
 // TestRealSkillsLifecycle exercises the Facet binary and published skills CLI.
-// Install skills@1.5.25 outside the checkout and set FACET_SKILLS_CLI to its
+// Install skills@1.7.4 outside the checkout and set FACET_SKILLS_CLI to its
 // bin/cli.mjs. Git URL rewriting supplies a local repository, so the test needs
 // no network, credentials, existing skills, or host configuration.
 func TestRealSkillsLifecycle(t *testing.T) {
 	cli := os.Getenv("FACET_SKILLS_CLI")
-	require.NotEmpty(t, cli, "set FACET_SKILLS_CLI to skills@1.5.25/bin/cli.mjs")
+	require.NotEmpty(t, cli, "set FACET_SKILLS_CLI to skills@1.7.4/bin/cli.mjs")
 	cli, err := filepath.Abs(cli)
 	require.NoError(t, err)
 	_, err = os.Stat(cli)
@@ -32,7 +32,7 @@ func TestRealSkillsLifecycle(t *testing.T) {
 	out, err := build.CombinedOutput()
 	require.NoError(t, err, "%s", out)
 
-	for _, scenario := range []string{"full removal", "native copies", "native install", "shared retained", "lock only", "xdg lock"} {
+	for _, scenario := range []string{"full removal", "native copies", "native install", "shared retained", "pi shared retained", "pi install", "lock only", "xdg lock", "upstream deletion"} {
 		t.Run(scenario, func(t *testing.T) {
 			home := t.TempDir()
 			repo := filepath.Join(home, "source")
@@ -75,7 +75,7 @@ func TestRealSkillsLifecycle(t *testing.T) {
 				require.NoError(t, err, "%s %v:\n%s", name, args, out)
 				return string(out)
 			}
-			require.Equal(t, "1.5.25", strings.TrimSpace(run("node", cli, "--version")))
+			require.Equal(t, "1.7.4", strings.TrimSpace(run("node", cli, "--version")))
 			run("git", "-C", repo, "init", "-q")
 			run("git", "-C", repo, "add", ".")
 			run("git", "-C", repo, "commit", "-qm", "fixture")
@@ -94,7 +94,7 @@ func TestRealSkillsLifecycle(t *testing.T) {
 				}
 				write(filepath.Join(configDir, "base.yaml"), content)
 			}
-			apply := func() { run(binary, "-c", configDir, "-s", stateDir, "apply", "work") }
+			apply := func() { t.Log(run(binary, "-c", configDir, "-s", stateDir, "apply", "work")) }
 			lock := func() map[string]json.RawMessage {
 				data, err := os.ReadFile(lockPath)
 				require.NoError(t, err)
@@ -107,18 +107,55 @@ func TestRealSkillsLifecycle(t *testing.T) {
 			canonical := filepath.Join(home, ".agents", "skills", "example")
 			configure("claude-code, codex, cursor, pi")
 			if scenario == "native install" {
-				configure("claude-code, pi")
+				configure("claude-code")
+			}
+			if scenario == "pi install" {
+				configure("pi")
+			}
+			if scenario == "upstream deletion" {
+				write(filepath.Join(configDir, "base.yaml"), fmt.Sprintf("ai:\n  agents: [claude-code, codex, cursor, pi]\n  skills:\n    - source: %s\n", source))
 			}
 			apply()
 			if scenario != "native install" {
 				require.FileExists(t, filepath.Join(canonical, "SKILL.md"))
 			}
 			require.Contains(t, lock(), "example")
-			if scenario == "native copies" || scenario == "native install" {
-				configure("claude-code, pi")
+			if scenario == "upstream deletion" {
+				run("git", "-C", repo, "rm", "-r", "example")
+				run("git", "-C", repo, "commit", "-qm", "remove example upstream")
 				apply()
 				require.NoDirExists(t, canonical)
-				for _, path := range []string{".claude/skills/example", ".pi/agent/skills/example"} {
+				require.NotContains(t, lock(), "example")
+				for _, path := range []string{".claude/skills/example"} {
+					_, err := os.Lstat(filepath.Join(home, path))
+					require.ErrorIs(t, err, os.ErrNotExist)
+				}
+				state, err := os.ReadFile(filepath.Join(stateDir, ".state.json"))
+				require.NoError(t, err)
+				require.NotContains(t, string(state), `"example"`)
+				require.Contains(t, lock(), "unrelated")
+				apply()
+				require.NoDirExists(t, canonical)
+				// An empty source is a discovery error, not permission to remove
+				// the last installed skill or forget its ownership.
+				run("git", "-C", repo, "rm", "-r", "unrelated")
+				run("git", "-C", repo, "commit", "-qm", "remove final skill upstream")
+				apply()
+				require.Contains(t, lock(), "unrelated")
+				require.FileExists(t, filepath.Join(home, ".agents", "skills", "unrelated", "SKILL.md"))
+				state, err = os.ReadFile(filepath.Join(stateDir, ".state.json"))
+				require.NoError(t, err)
+				require.Contains(t, string(state), `"unrelated"`)
+				projectData, err := os.ReadFile(projectSkill)
+				require.NoError(t, err)
+				require.Equal(t, projectContent, string(projectData))
+				return
+			}
+			if scenario == "native copies" || scenario == "native install" {
+				configure("claude-code")
+				apply()
+				require.NoDirExists(t, canonical)
+				for _, path := range []string{".claude/skills/example"} {
 					info, err := os.Lstat(filepath.Join(home, path))
 					require.NoError(t, err)
 					require.True(t, info.IsDir(), "native skill must be a directory, not a symlink")
@@ -128,12 +165,16 @@ func TestRealSkillsLifecycle(t *testing.T) {
 				require.NoError(t, err)
 				require.Contains(t, string(state), `"example"`, "inventory must recognize native copies")
 			}
-			if scenario == "shared retained" {
-				configure("cursor")
+			if scenario == "shared retained" || scenario == "pi shared retained" || scenario == "pi install" {
+				remaining := "cursor"
+				if scenario != "shared retained" {
+					remaining = "pi"
+				}
+				configure(remaining)
 				apply()
 				require.FileExists(t, filepath.Join(canonical, "SKILL.md"))
 				require.Contains(t, lock(), "example")
-				for _, path := range []string{".claude/skills/example", ".pi/agent/skills/example"} {
+				for _, path := range []string{".claude/skills/example"} {
 					_, err := os.Lstat(filepath.Join(home, path))
 					require.ErrorIs(t, err, os.ErrNotExist)
 				}
@@ -148,7 +189,7 @@ func TestRealSkillsLifecycle(t *testing.T) {
 			require.NoError(t, err, "global removal must preserve same-name project skills")
 			require.Equal(t, projectContent, string(projectData))
 			require.NoDirExists(t, canonical)
-			for _, path := range []string{".claude/skills/example", ".pi/agent/skills/example"} {
+			for _, path := range []string{".claude/skills/example"} {
 				_, err := os.Lstat(filepath.Join(home, path))
 				require.ErrorIs(t, err, os.ErrNotExist)
 			}

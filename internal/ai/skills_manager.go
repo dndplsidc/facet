@@ -17,9 +17,9 @@ type SkillsCommandRunner interface {
 	RunInDir(dir string, name string, args ...string) error
 }
 
-// Claude Code and Pi have native skill directories. Other supported agents
+// Claude Code has a native skill directory. Pi and other supported agents
 // consume shared storage; unknown agents conservatively keep that storage.
-func nativeSkillAgent(agent string) bool { return agent == "claude-code" || agent == "pi" }
+func nativeSkillAgent(agent string) bool { return agent == "claude-code" }
 
 type skillLockEntry struct {
 	Source    string `json:"source"`
@@ -54,9 +54,9 @@ func (m *NPXSkillsManager) checkNPX() error {
 
 // Install runs: npx skills add <source> --skill <s1> --skill <s2> -a <a1> -a <a2> -y
 // When skills is empty, passes --skill * to request all skills while preserving explicit agent scoping.
-func (m *NPXSkillsManager) Install(source string, skills []string, agents []string) error {
+func (m *NPXSkillsManager) Install(source string, skills []string, agents []string) (SkillInstallResult, error) {
 	if err := m.checkNPX(); err != nil {
-		return err
+		return SkillInstallResult{}, err
 	}
 
 	var parts []string
@@ -84,10 +84,64 @@ func (m *NPXSkillsManager) Install(source string, skills []string, agents []stri
 		}
 	}
 
-	if err := m.runner.Run(parts[0], parts[1:]...); err != nil {
-		return fmt.Errorf("skills install: %w", err)
+	if len(skills) > 0 {
+		if err := m.runner.Run(parts[0], parts[1:]...); err != nil {
+			return SkillInstallResult{}, fmt.Errorf("skills install: %w", err)
+		}
+		return SkillInstallResult{}, nil
 	}
-	return nil
+
+	data, installErr := m.runner.Output(parts[0], append(parts[1:], "--json")...)
+	var results []struct {
+		Name   string   `json:"name"`
+		Status string   `json:"status"`
+		Agents []string `json:"agents"`
+		Error  string   `json:"error"`
+	}
+	parseErr := json.Unmarshal(data, &results)
+	// This exact response is emitted before discovery or installation. Other
+	// failures may have mutated files, so they must never trigger a retry.
+	if installErr != nil && parseErr == nil && len(results) == 1 &&
+		results[0].Name == "" && results[0].Status == "failed" &&
+		results[0].Error == "--json is not yet supported for well-known skill sources." {
+		if err := m.runner.Run(parts[0], parts[1:]...); err != nil {
+			return SkillInstallResult{}, fmt.Errorf("skills install: %w", err)
+		}
+		return SkillInstallResult{}, nil
+	}
+	if installErr != nil {
+		return SkillInstallResult{}, fmt.Errorf("skills install: %w", installErr)
+	}
+	if parseErr != nil {
+		return SkillInstallResult{}, fmt.Errorf("parse skills install results: %w", parseErr)
+	}
+	if len(results) == 0 {
+		return SkillInstallResult{}, fmt.Errorf("skills install returned no installed skills")
+	}
+
+	names := make(map[string]struct{}, len(results))
+	for _, result := range results {
+		if result.Name == "" || result.Status != "installed" {
+			return SkillInstallResult{}, fmt.Errorf("skills install returned incomplete results for %q", result.Name)
+		}
+		// The CLI reports agent display names rather than command-line IDs.
+		// A successful exit and installed status establish that no target
+		// failed. Reject visibly incomplete or empty target reports as well.
+		agentNames := make(map[string]struct{}, len(result.Agents))
+		for _, agent := range result.Agents {
+			if agent != "" {
+				agentNames[agent] = struct{}{}
+			}
+		}
+		if len(agentNames) < len(agents) || len(agentNames) == 0 {
+			return SkillInstallResult{}, fmt.Errorf("skills install returned incomplete agent results for %q", result.Name)
+		}
+		if _, duplicate := names[result.Name]; duplicate {
+			return SkillInstallResult{}, fmt.Errorf("skills install returned duplicate skill %q", result.Name)
+		}
+		names[result.Name] = struct{}{}
+	}
+	return SkillInstallResult{Names: sortedSetKeys(names)}, nil
 }
 
 // Remove runs global removal, omitting -a to remove a skill across all agents.

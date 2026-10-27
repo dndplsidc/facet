@@ -97,11 +97,22 @@ if [ "$1" = "skills" ]; then
         fi
         exit 0
     fi
+    json_mode=false
+    [[ " $* " == *" --json "* ]] && json_mode=true
+    install_agents=$(printf '%s\n' "$@" | awk 'take {print; take=0} $0 == "-a" {take=1}' | jq -Rsc 'split("\n") | map(select(length > 0))')
+    selected='{"skills":{}}'
+    if [ "$2" = "add" ] && $json_mode && [ -f "$HOME/.mock-skills-install-result.json" ]; then
+        cat "$HOME/.mock-skills-install-result.json"
+        exit 0
+    fi
     if [ -f "$lock" ] && jq empty "$lock" 2>/dev/null; then
         catalog="$HOME/.mock-skills-catalog.json"
         if [ ! -f "$catalog" ]; then echo '{"skills":{}}' > "$catalog"; fi
         jq -s '.[0] * .[1]' "$catalog" "$lock" > "$catalog.tmp"
         mv "$catalog.tmp" "$catalog"
+        if [ -f "$HOME/.mock-skills-upstream.json" ]; then
+            catalog="$HOME/.mock-skills-upstream.json"
+        fi
         if [ "$2" = "remove" ] && [[ " $* " != *" -a "* ]] && [ ! -f "$HOME/.mock-skills-retain" ]; then
             shift 2
             for name in "$@"; do
@@ -118,6 +129,7 @@ if [ "$1" = "skills" ]; then
                     jq --arg source "$source" --arg name "$name" \
                         '.skills |= with_entries(select((.value.source == $source or .value.sourceUrl == $source) and ($name == "*" or .key == $name)))' \
                         "$catalog" > "$catalog.selected"
+                    selected=$(jq -s '.[0] * .[1]' <(printf '%s' "$selected") "$catalog.selected")
                     jq -s '.[0] * .[1]' "$lock" "$catalog.selected" > "$lock.tmp"
                     mv "$lock.tmp" "$lock"
                     shift
@@ -125,6 +137,10 @@ if [ "$1" = "skills" ]; then
                 shift
             done
         fi
+    fi
+    if $json_mode; then
+        printf '%s' "$selected" | jq --argjson agents "$install_agents" '[.skills | keys[] | {name: ., status: "installed", agents: $agents}]'
+        exit 0
     fi
     echo "mock-npx: skills $*"
     exit 0

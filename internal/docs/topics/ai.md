@@ -103,7 +103,20 @@ removed or narrowed to fewer skills, facet removes the no-longer-declared skills
 for the affected agents before writing the new state. This includes entries that
 were previously installed as "all skills from this source."
 
-Codex and Cursor read shared storage at `~/.agents/skills`. When a previously
+All-source installs also reconcile skills deleted upstream. facet reads the fresh
+results of `skills add --json` and removes previously managed names missing from
+a complete, successful installation. It considers the other configured sources
+and agents before removing a name. This uses the current installation results,
+not the accumulated local lock, to determine what the source still supplies.
+
+Failed, partial, empty, or unreadable installation results preserve previous
+ownership and skip upstream-deletion cleanup for that source. Empty sources
+cannot be distinguished safely from discovery errors by the CLI. Sources whose
+installer does not support JSON keep their existing installation behavior with
+a warning that upstream-deletion cleanup was skipped. Failed removals remain
+tracked for retry. Unrelated installations are never adopted for this cleanup.
+
+Codex, Cursor, and Pi read shared storage at `~/.agents/skills`. When a previously
 Facet-managed skill is removed entirely, facet runs `npx skills remove <names>
 -g -y` without agent filters. This removes that skill across all CLI-supported
 agents, including its shared directory and lock entry, even if another detected
@@ -111,12 +124,12 @@ agent such as Cline can discover it. Other skill names are left alone.
 Removal runs from an empty temporary directory to protect same-named project
 skills from the CLI's fallback paths.
 
-When a skill remains desired by Codex or Cursor, removals stay scoped to the
+When a skill remains desired by Codex, Cursor, or Pi, removals stay scoped to the
 dropped agents and shared storage is retained. Shared agents cannot be isolated
 from each other through this directory. When an agent reduction leaves only
-Claude Code and/or Pi, facet removes the skill globally and reinstalls the
-remaining native copies with `--copy`. Native-only installs always use `--copy`;
-this flag cannot avoid shared storage for Codex or Cursor.
+Claude Code, facet removes the skill globally and reinstalls the
+remaining Claude Code copy with `--copy`. Native-only installs always use `--copy`;
+this flag cannot avoid shared storage for Codex, Cursor, or Pi.
 
 The skills CLI maintains its own lock at `~/.agents/.skill-lock.json`, or
 `$XDG_STATE_HOME/skills/.skill-lock.json` when configured. facet never edits it.
@@ -127,14 +140,20 @@ Legacy all-source records retain concrete retry names even if the CLI already
 deleted their lock entries. Agent-scoped removals still rely on the CLI's exit
 status; they do not receive the global absence check because shared copies remain.
 
-After installation, facet records names confirmed by both the lock and actual
+For named installs, facet records names confirmed by both the lock and actual
 CLI inventory, including native copies. A stale lock entry alone is not proof
 of installation. Missing names trigger a warning. If verification cannot be
-read, named installs fall back to recording requested names with a warning;
-all-source installs cannot infer names and warn instead. Cleanup uses the
-existing `.state.json` to identify previously managed skills; unrelated lock
-entries and remnants already absent from Facet state are not automatically
-pruned.
+read, named installs fall back to recording requested names with a warning.
+All-source installs record the fresh structured installation results; legacy
+sources without JSON support use lock and inventory verification instead.
+Cleanup uses the existing `.state.json` to identify previously managed skills;
+unrelated lock entries and remnants already absent from Facet state are not
+automatically pruned.
+
+facet targets skills CLI 1.7.4. In this version Pi reads the shared
+`~/.agents/skills` directory; only Claude Code uses a native directory for
+Facet's copy-based cleanup. JSON installation results require a CLI version
+that supports `skills add --json`.
 
 ### Skill Source Formats
 

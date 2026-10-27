@@ -39,7 +39,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm install --prefix "$RUNNER_TEMP/facet-skills-cli" --no-audit --no-fund skills@1.5.25
+      - run: npm install --prefix "$RUNNER_TEMP/facet-skills-cli" --no-audit --no-fund skills@1.7.4
       - run: make test-skills-integration
         env:
           FACET_SKILLS_CLI: ${{ runner.temp }}/facet-skills-cli/node_modules/skills/bin/cli.mjs

@@ -10,9 +10,16 @@ type AgentProvider interface {
 	SettingsFilePath() string
 }
 
+// SkillInstallResult contains the current source inventory only when an
+// all-source install reported complete, authoritative results. For all-source
+// installs, nil Names means the CLI does not support an authoritative inventory.
+type SkillInstallResult struct {
+	Names []string
+}
+
 // SkillsManager manages skill installation/removal via external CLI.
 type SkillsManager interface {
-	Install(source string, skills []string, agents []string) error
+	Install(source string, skills []string, agents []string) (SkillInstallResult, error)
 	Remove(skills []string, agents []string) error
 	InstalledForSource(source string) ([]string, error)
 	TrackedForSource(source string) ([]string, error)

@@ -11,7 +11,7 @@ test:
 test-cover:
 	go test ./... -cover
 
-# Requires skills@1.5.25 installed outside the checkout; see e2e/skills_cli_test.go.
+# Requires skills@1.7.4 installed outside the checkout; see e2e/skills_cli_test.go.
 test-skills-integration:
 	go test -tags skillsintegration ./e2e -run TestRealSkillsLifecycle -v -count=1
 

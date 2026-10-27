@@ -61,8 +61,11 @@ type mockSkillsMgr struct {
 		skills []string
 		agents []string
 	}
-	sourceSkills map[string][]string
-	removed      []struct {
+	sourceSkills    map[string][]string
+	sourceResults   map[string]SkillInstallResult
+	sourceErrors    map[string]error
+	installAttempts int
+	removed         []struct {
 		skills []string
 		agents []string
 	}
@@ -70,16 +73,23 @@ type mockSkillsMgr struct {
 	removeErr  error
 }
 
-func (m *mockSkillsMgr) Install(source string, skills []string, agents []string) error {
+func (m *mockSkillsMgr) Install(source string, skills []string, agents []string) (SkillInstallResult, error) {
+	m.installAttempts++
+	if err := m.sourceErrors[source]; err != nil {
+		return SkillInstallResult{}, err
+	}
 	if m.installErr != nil {
-		return m.installErr
+		return SkillInstallResult{}, m.installErr
 	}
 	m.installed = append(m.installed, struct {
 		source string
 		skills []string
 		agents []string
 	}{source: source, skills: skills, agents: agents})
-	return nil
+	if result, exists := m.sourceResults[source]; exists {
+		return result, nil
+	}
+	return SkillInstallResult{Names: append([]string(nil), m.sourceSkills[source]...)}, nil
 }
 
 func (m *mockSkillsMgr) Remove(skills []string, agents []string) error {
@@ -142,7 +152,8 @@ func TestOrchestrator_SkillCleanupLifecycle(t *testing.T) {
 		global    bool
 	}{
 		{"removed entirely", nil, false, true},
-		{"native only", []string{"claude-code", "pi"}, false, true},
+		{"native only", []string{"claude-code"}, false, true},
+		{"pi shared still needed", []string{"pi"}, false, false},
 		{"shared still needed", []string{"cursor"}, false, false},
 		{"failed cleanup retained", nil, true, true},
 	} {
@@ -249,13 +260,13 @@ func (m *errInstalledForSourceSkillsMgr) TrackedForSource(source string) ([]stri
 	return m.InstalledForSource(source)
 }
 
-func (m *errInstalledForSourceSkillsMgr) Install(source string, skills []string, agents []string) error {
+func (m *errInstalledForSourceSkillsMgr) Install(source string, skills []string, agents []string) (SkillInstallResult, error) {
 	m.installed = append(m.installed, struct {
 		source string
 		skills []string
 		agents []string
 	}{source: source, skills: skills, agents: agents})
-	return nil
+	return SkillInstallResult{}, nil
 }
 
 func (m *errInstalledForSourceSkillsMgr) Remove(_ []string, _ []string) error { return nil }
@@ -306,9 +317,9 @@ type trackingSkillsMgr struct {
 	tracker *orderTracker
 }
 
-func (t *trackingSkillsMgr) Install(_ string, _ []string, _ []string) error {
+func (t *trackingSkillsMgr) Install(_ string, _ []string, _ []string) (SkillInstallResult, error) {
 	t.tracker.calls = append(t.tracker.calls, "install-skill")
-	return nil
+	return SkillInstallResult{}, nil
 }
 
 func (t *trackingSkillsMgr) Remove(_ []string, _ []string) error {
@@ -341,16 +352,16 @@ type selectiveSkillsMgr struct {
 	}
 }
 
-func (s *selectiveSkillsMgr) Install(source string, skills []string, agents []string) error {
+func (s *selectiveSkillsMgr) Install(source string, skills []string, agents []string) (SkillInstallResult, error) {
 	if source == s.failSource {
-		return fmt.Errorf("install failed for source %q", source)
+		return SkillInstallResult{}, fmt.Errorf("install failed for source %q", source)
 	}
 	s.installed = append(s.installed, struct {
 		source string
 		skills []string
 		agents []string
 	}{source: source, skills: skills, agents: agents})
-	return nil
+	return SkillInstallResult{Names: append([]string(nil), s.sourceSkills[source]...)}, nil
 }
 
 func (s *selectiveSkillsMgr) Remove(skills []string, agents []string) error {
@@ -1560,5 +1571,216 @@ func TestOrchestrator_Apply_NamedSkillVerification_LockReadError(t *testing.T) {
 	installMessages := installSuccesses(rep.successes)
 	if len(installMessages) != 1 || !strings.Contains(installMessages[0], "unverified") {
 		t.Fatalf("expected unverified install-success message, got: %v", installMessages)
+	}
+}
+
+func TestOrchestrator_AllSourceRefreshPrunesDeletedUpstreamSkills(t *testing.T) {
+	mgr := &mockSkillsMgr{sourceSkills: map[string][]string{"org/repo": {"kept"}}}
+	previous := &AIState{Skills: []SkillState{
+		{Source: "org/repo", Name: "kept", Agents: []string{"codex"}},
+		{Source: "org/repo", Name: "deleted", Agents: []string{"codex"}},
+	}}
+	config := EffectiveAIConfig{"codex": {Skills: []ResolvedSkill{{Source: "org/repo"}}}}
+
+	state, err := NewOrchestrator(nil, mgr, &mockReporter{}).Apply(config, previous)
+	require.NoError(t, err)
+	require.Len(t, mgr.removed, 1)
+	require.Equal(t, []string{"deleted"}, mgr.removed[0].skills)
+	require.Empty(t, mgr.removed[0].agents)
+	require.Equal(t, []SkillState{{Source: "org/repo", Name: "kept", Agents: []string{"codex"}}}, state.Skills)
+}
+
+func TestOrchestrator_AllSourceRefreshUsesCurrentResultsDespiteStaleLock(t *testing.T) {
+	mgr := &mockSkillsMgr{
+		sourceSkills:  map[string][]string{"org/repo": {"kept", "deleted"}},
+		sourceResults: map[string]SkillInstallResult{"org/repo": {Names: []string{"kept"}}},
+	}
+	previous := &AIState{Skills: []SkillState{
+		{Source: "org/repo", Name: "kept", Agents: []string{"codex"}},
+		{Source: "org/repo", Name: "deleted", Agents: []string{"codex"}},
+	}}
+	config := EffectiveAIConfig{"codex": {Skills: []ResolvedSkill{{Source: "org/repo"}}}}
+
+	state, err := NewOrchestrator(nil, mgr, &mockReporter{}).Apply(config, previous)
+	require.NoError(t, err)
+	require.Len(t, mgr.removed, 1)
+	require.Equal(t, []string{"deleted"}, mgr.removed[0].skills)
+	require.Equal(t, []SkillState{{Source: "org/repo", Name: "kept", Agents: []string{"codex"}}}, state.Skills)
+}
+
+func TestOrchestrator_AllSourceRefreshRetainsOwnershipWhenResultsUnavailable(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(fmt.Sprintf("install failure %t", fail), func(t *testing.T) {
+			mgr := &mockSkillsMgr{sourceResults: map[string]SkillInstallResult{"org/repo": {}}}
+			if fail {
+				mgr.installErr = errors.New("failed after partial writes")
+			}
+			previous := &AIState{Skills: []SkillState{{Source: "org/repo", Name: "previous", Agents: []string{"codex"}}}}
+			config := EffectiveAIConfig{"codex": {Skills: []ResolvedSkill{{Source: "org/repo"}}}}
+
+			state, err := NewOrchestrator(nil, mgr, &mockReporter{}).Apply(config, previous)
+			require.NoError(t, err)
+			require.Equal(t, previous.Skills, state.Skills)
+			require.Empty(t, mgr.removed)
+			require.Equal(t, 1, mgr.installAttempts)
+		})
+	}
+}
+
+func TestOrchestrator_AllSourceLegacyInstallRecordsVerifiedNamesWithoutPruning(t *testing.T) {
+	mgr := &mockSkillsMgr{
+		sourceSkills:  map[string][]string{"https://example.test": {"current"}},
+		sourceResults: map[string]SkillInstallResult{"https://example.test": {}},
+	}
+	config := EffectiveAIConfig{"codex": {Skills: []ResolvedSkill{{Source: "https://example.test"}}}}
+	reporter := &mockReporter{}
+
+	state, err := NewOrchestrator(nil, mgr, reporter).Apply(config, nil)
+	require.NoError(t, err)
+	require.Equal(t, []SkillState{{Source: "https://example.test", Name: "current", Agents: []string{"codex"}}}, state.Skills)
+	require.Contains(t, strings.Join(reporter.messages, "\n"), "skipping upstream pruning")
+}
+
+func TestOrchestrator_AllSourceRefreshRetriesFailedPrune(t *testing.T) {
+	mgr := &mockSkillsMgr{sourceSkills: map[string][]string{"org/repo": {"current"}}, removeErr: errors.New("cleanup failed")}
+	previous := &AIState{Skills: []SkillState{{Source: "org/repo", Name: "deleted", Agents: []string{"codex"}}}}
+	config := EffectiveAIConfig{"codex": {Skills: []ResolvedSkill{{Source: "org/repo"}}}}
+	orch := NewOrchestrator(nil, mgr, &mockReporter{})
+
+	state, err := orch.Apply(config, previous)
+	require.NoError(t, err)
+	require.Contains(t, state.Skills, previous.Skills[0])
+	mgr.removeErr = nil
+
+	state, err = orch.Apply(config, state)
+	require.NoError(t, err)
+	require.Len(t, mgr.removed, 1)
+	require.Equal(t, []string{"deleted"}, mgr.removed[0].skills)
+	require.Equal(t, []SkillState{{Source: "org/repo", Name: "current", Agents: []string{"codex"}}}, state.Skills)
+}
+
+func TestOrchestrator_AllSourceRefreshProtectsOtherSourcesAndAgents(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		agent      string
+		all        bool
+		wantRemove bool
+		global     bool
+		installs   int
+	}{
+		{"same agent named source", "codex", false, false, false, 2},
+		{"another shared agent all source", "cursor", true, true, false, 2},
+		{"native named source restored", "claude-code", false, true, true, 3},
+		{"pi shared source retained", "pi", false, true, false, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mgr := &mockSkillsMgr{sourceSkills: map[string][]string{"a/source": {"current"}, "z/source": {"shared"}}}
+			previous := &AIState{Skills: []SkillState{{Source: "a/source", Name: "shared", Agents: []string{"codex"}}}}
+			config := EffectiveAIConfig{"codex": {Skills: []ResolvedSkill{{Source: "a/source"}}}}
+			other := ResolvedSkill{Source: "z/source", Name: "shared"}
+			if tc.all {
+				other.Name = ""
+			}
+			agentConfig := config[tc.agent]
+			agentConfig.Skills = append(agentConfig.Skills, other)
+			config[tc.agent] = agentConfig
+
+			state, err := NewOrchestrator(nil, mgr, &mockReporter{}).Apply(config, previous)
+			require.NoError(t, err)
+			require.Len(t, mgr.installed, tc.installs)
+			require.NotContains(t, state.Skills, previous.Skills[0])
+			require.Contains(t, state.Skills, SkillState{Source: "z/source", Name: "shared", Agents: []string{tc.agent}})
+			if tc.wantRemove {
+				require.Len(t, mgr.removed, 1)
+				require.Equal(t, []string{"shared"}, mgr.removed[0].skills)
+				require.Equal(t, tc.global, len(mgr.removed[0].agents) == 0)
+				if !tc.global {
+					require.Equal(t, []string{"codex"}, mgr.removed[0].agents)
+				}
+			} else {
+				require.Empty(t, mgr.removed)
+			}
+		})
+	}
+}
+
+func TestOrchestrator_AllSourceRefreshDefersPruningWhenOtherSourceUnknown(t *testing.T) {
+	mgr := &mockSkillsMgr{
+		sourceSkills:  map[string][]string{"a/source": {"current"}},
+		sourceResults: map[string]SkillInstallResult{"z/source": {}},
+	}
+	previous := &AIState{Skills: []SkillState{{Source: "a/source", Name: "possibly-shared", Agents: []string{"pi"}}}}
+	config := EffectiveAIConfig{"pi": {Skills: []ResolvedSkill{{Source: "a/source"}, {Source: "z/source"}}}}
+
+	state, err := NewOrchestrator(nil, mgr, &mockReporter{}).Apply(config, previous)
+	require.NoError(t, err)
+	require.Empty(t, mgr.removed)
+	require.Contains(t, state.Skills, previous.Skills[0])
+}
+
+func TestOrchestrator_AllSourceRefreshExpandsLegacyOwnershipBeforePruning(t *testing.T) {
+	mgr := &mockSkillsMgr{
+		sourceSkills:  map[string][]string{"org/repo": {"kept", "deleted"}},
+		sourceResults: map[string]SkillInstallResult{"org/repo": {Names: []string{"kept"}}},
+	}
+	previous := &AIState{Skills: []SkillState{{Source: "org/repo", Agents: []string{"codex"}}}}
+	config := EffectiveAIConfig{"codex": {Skills: []ResolvedSkill{{Source: "org/repo"}}}}
+
+	state, err := NewOrchestrator(nil, mgr, &mockReporter{}).Apply(config, previous)
+	require.NoError(t, err)
+	require.Len(t, mgr.removed, 1)
+	require.Equal(t, []string{"deleted"}, mgr.removed[0].skills)
+	require.Equal(t, []SkillState{{Source: "org/repo", Name: "kept", Agents: []string{"codex"}}}, state.Skills)
+}
+
+func TestOrchestrator_AllSourceRefreshRestoresLastInstalledNativeSource(t *testing.T) {
+	mgr := &mockSkillsMgr{sourceSkills: map[string][]string{
+		"a/source": {"current"},
+		"b/source": {"shared"},
+		"z/source": {"shared"},
+	}}
+	previous := &AIState{Skills: []SkillState{{Source: "a/source", Name: "shared", Agents: []string{"codex"}}}}
+	config := EffectiveAIConfig{
+		"codex": {Skills: []ResolvedSkill{{Source: "a/source"}}},
+		"claude-code": {Skills: []ResolvedSkill{
+			{Source: "b/source", Name: "shared"},
+			{Source: "z/source", Name: "shared"},
+		}},
+	}
+
+	_, err := NewOrchestrator(nil, mgr, &mockReporter{}).Apply(config, previous)
+	require.NoError(t, err)
+	require.Len(t, mgr.installed, 4)
+	require.Equal(t, "z/source", mgr.installed[3].source)
+	require.Equal(t, []string{"shared"}, mgr.installed[3].skills)
+	require.Equal(t, []string{"claude-code"}, mgr.installed[3].agents)
+}
+
+func TestOrchestrator_AllSourceRefreshRetainsOwnershipWhenReplacementFails(t *testing.T) {
+	for _, agent := range []string{"codex", "claude-code", "cursor"} {
+		t.Run(agent, func(t *testing.T) {
+			mgr := &mockSkillsMgr{
+				sourceSkills: map[string][]string{"a/source": {"current"}},
+				sourceErrors: map[string]error{"z/source": errors.New("install failed")},
+			}
+			previous := &AIState{Skills: []SkillState{{Source: "a/source", Name: "shared", Agents: []string{"codex"}}}}
+			config := EffectiveAIConfig{"codex": {Skills: []ResolvedSkill{{Source: "a/source"}}}}
+			other := config[agent]
+			other.Skills = append(other.Skills, ResolvedSkill{Source: "z/source", Name: "shared"})
+			config[agent] = other
+
+			orch := NewOrchestrator(nil, mgr, &mockReporter{})
+			state, err := orch.Apply(config, previous)
+			require.NoError(t, err)
+			require.Empty(t, mgr.removed)
+			require.Contains(t, state.Skills, previous.Skills[0])
+
+			// Removing the failed replacement must still clean up the old copy.
+			state, err = orch.Apply(EffectiveAIConfig{"codex": {Skills: []ResolvedSkill{{Source: "a/source"}}}}, state)
+			require.NoError(t, err)
+			require.Len(t, mgr.removed, 1)
+			require.Equal(t, []string{"shared"}, mgr.removed[0].skills)
+			require.NotContains(t, state.Skills, previous.Skills[0])
+		})
 	}
 }
