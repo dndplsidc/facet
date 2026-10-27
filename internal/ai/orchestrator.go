@@ -3,6 +3,7 @@ package ai
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -255,6 +256,35 @@ func (o *Orchestrator) applySkills(config EffectiveAIConfig, previousState *AISt
 		}
 	}
 
+	// Snapshot legacy ownership before an install can change the CLI lock.
+	var refreshPrevious []SkillState
+	if previousState != nil {
+		for _, previous := range previousState.Skills {
+			if previous.Name != "" {
+				refreshPrevious = append(refreshPrevious, previous)
+				continue
+			}
+			var retainedAgents []string
+			for _, agent := range previous.Agents {
+				if _, retained := currentAllSources[previous.Source][agent]; retained {
+					retainedAgents = append(retainedAgents, agent)
+				}
+			}
+			if len(retainedAgents) == 0 {
+				continue
+			}
+			names, err := o.skillsManager.TrackedForSource(previous.Source)
+			if err != nil {
+				o.reporter.Warning(fmt.Sprintf("failed to resolve previous skills from %q: %v", previous.Source, err))
+				state.Skills = append(state.Skills, SkillState{Source: previous.Source, Agents: retainedAgents})
+				continue
+			}
+			for _, name := range names {
+				refreshPrevious = append(refreshPrevious, SkillState{Source: previous.Source, Name: name, Agents: retainedAgents})
+			}
+		}
+	}
+
 	if previousState != nil {
 		removals := make(map[skillID]map[string]struct{})
 		queueRemoval := func(id skillID, agent string) {
@@ -424,6 +454,35 @@ func (o *Orchestrator) applySkills(config EffectiveAIConfig, previousState *AISt
 		return groupKeys[i].agents < groupKeys[j].agents
 	})
 
+	refreshed := make(map[string]map[string]map[string]struct{})
+	desired := make(map[string]map[string]struct{})
+	installed := make(map[skillID]map[string]struct{})
+	unknownAll := make(map[string]struct{})
+	for id, agents := range currentSkills {
+		if id.name != "" {
+			addSkillAgents(desired, id.name, sortedSetKeys(agents))
+		}
+	}
+	retainPrevious := func(source string, agents []string) {
+		if previousState == nil {
+			return
+		}
+		for _, previous := range previousState.Skills {
+			if previous.Source != source {
+				continue
+			}
+			var retained []string
+			for _, agent := range previous.Agents {
+				if slices.Contains(agents, agent) {
+					retained = append(retained, agent)
+				}
+			}
+			if len(retained) > 0 {
+				state.Skills = append(state.Skills, SkillState{Source: source, Name: previous.Name, Agents: retained})
+			}
+		}
+	}
+
 	for _, gk := range groupKeys {
 		skills := groups[gk]
 		agents := strings.Split(gk.agents, ",")
@@ -436,6 +495,11 @@ func (o *Orchestrator) applySkills(config EffectiveAIConfig, previousState *AISt
 			}
 		}
 		if blocked {
+			if allGroups[gk] {
+				for _, agent := range agents {
+					unknownAll[agent] = struct{}{}
+				}
+			}
 			continue
 		}
 
@@ -449,30 +513,48 @@ func (o *Orchestrator) applySkills(config EffectiveAIConfig, previousState *AISt
 		}
 
 		label := fmt.Sprintf("  -> skills install %s [%s]", gk.source, strings.Join(agents, ","))
+		var result SkillInstallResult
 		if err := o.reporter.ProgressStep(label, func() error {
-			return o.skillsManager.Install(gk.source, installSkills, agents)
+			var err error
+			result, err = o.skillsManager.Install(gk.source, installSkills, agents)
+			return err
 		}); err != nil {
 			o.reporter.Warning(fmt.Sprintf("failed to install skills from %q: %v", gk.source, err))
+			retainPrevious(gk.source, agents)
+			if allGroups[gk] {
+				for _, agent := range agents {
+					unknownAll[agent] = struct{}{}
+				}
+			}
 			continue
 		}
 
 		recordedSkills := skills
 		verifiedViaLock := true
 		if allGroups[gk] {
-			var resolvedSkills []string
-			verifyErr := o.reporter.ProgressStep("  -> skills verify "+gk.source, func() error {
-				var stepErr error
-				resolvedSkills, stepErr = o.skillsManager.InstalledForSource(gk.source)
-				return stepErr
-			})
-			if verifyErr != nil {
-				o.reporter.Warning(fmt.Sprintf("installed all skills from %q, but failed to resolve concrete skill names: %v", gk.source, verifyErr))
-				recordedSkills = nil
-			} else if len(resolvedSkills) == 0 {
-				o.reporter.Warning(fmt.Sprintf("installed all skills from %q, but could not resolve concrete skill names from the skill lock; future cleanup will be skipped until the source is re-applied with a readable lock", gk.source))
-				recordedSkills = nil
+			recordedSkills = result.Names
+			if len(result.Names) == 0 {
+				o.reporter.Warning(fmt.Sprintf("installed all skills from %q, but the CLI did not provide authoritative names; preserving previous ownership and skipping upstream pruning", gk.source))
+				retainPrevious(gk.source, agents)
+				for _, agent := range agents {
+					unknownAll[agent] = struct{}{}
+				}
+				var verifyErr error
+				recordedSkills, verifyErr = o.skillsManager.InstalledForSource(gk.source)
+				if verifyErr != nil {
+					o.reporter.Warning(fmt.Sprintf("could not verify legacy skill installation from %q: %v", gk.source, verifyErr))
+					recordedSkills = nil
+				}
 			} else {
-				recordedSkills = resolvedSkills
+				if refreshed[gk.source] == nil {
+					refreshed[gk.source] = make(map[string]map[string]struct{})
+				}
+				for _, agent := range agents {
+					refreshed[gk.source][agent] = make(map[string]struct{}, len(result.Names))
+					for _, name := range result.Names {
+						refreshed[gk.source][agent][name] = struct{}{}
+					}
+				}
 			}
 		} else {
 			var verified []string
@@ -506,6 +588,14 @@ func (o *Orchestrator) applySkills(config EffectiveAIConfig, previousState *AISt
 
 		// Record each managed skill in state.
 		for _, skillName := range recordedSkills {
+			addSkillAgents(desired, skillName, agents)
+			id := skillID{source: gk.source, name: skillName}
+			if installed[id] == nil {
+				installed[id] = make(map[string]struct{})
+			}
+			for _, agent := range agents {
+				installed[id][agent] = struct{}{}
+			}
 			state.Skills = append(state.Skills, SkillState{
 				Source: gk.source,
 				Name:   skillName,
@@ -520,6 +610,155 @@ func (o *Orchestrator) applySkills(config EffectiveAIConfig, previousState *AISt
 				o.reporter.Success(fmt.Sprintf("installed skills %v from %s", recordedSkills, gk.source))
 			} else {
 				o.reporter.Success(fmt.Sprintf("installed skills %v from %s (unverified)", recordedSkills, gk.source))
+			}
+		}
+	}
+
+	o.pruneRefreshedSkills(refreshPrevious, refreshed, desired, installed, unknownAll, state)
+	state.Skills = mergeSkillState(state.Skills)
+}
+
+func addSkillAgents(skills map[string]map[string]struct{}, name string, agents []string) {
+	if skills[name] == nil {
+		skills[name] = make(map[string]struct{})
+	}
+	for _, agent := range agents {
+		skills[name][agent] = struct{}{}
+	}
+}
+
+func mergeSkillState(skills []SkillState) []SkillState {
+	agents := make(map[skillID]map[string]struct{})
+	var ids []skillID
+	for _, skill := range skills {
+		id := skillID{source: skill.Source, name: skill.Name}
+		if agents[id] == nil {
+			agents[id] = make(map[string]struct{})
+			ids = append(ids, id)
+		}
+		for _, agent := range skill.Agents {
+			agents[id][agent] = struct{}{}
+		}
+	}
+	var result []SkillState
+	for _, id := range ids {
+		result = append(result, SkillState{Source: id.source, Name: id.name, Agents: sortedSetKeys(agents[id])})
+	}
+	return result
+}
+
+// pruneRefreshedSkills waits for every install result so another source's
+// desired names and agent copies survive a source's upstream deletion.
+func (o *Orchestrator) pruneRefreshedSkills(
+	previous []SkillState,
+	refreshed map[string]map[string]map[string]struct{},
+	desired map[string]map[string]struct{},
+	installed map[skillID]map[string]struct{},
+	unknownAll map[string]struct{},
+	state *AIState,
+) {
+	confirmed := make(map[string]map[string]struct{})
+	for id, agents := range installed {
+		addSkillAgents(confirmed, id.name, sortedSetKeys(agents))
+	}
+	unresolved := make(map[string]bool)
+	for name, agents := range desired {
+		for agent := range agents {
+			if _, ok := confirmed[name][agent]; !ok {
+				unresolved[name] = true
+			}
+		}
+	}
+
+	removals := make(map[skillID]map[string]struct{})
+	for _, skill := range previous {
+		for _, agent := range skill.Agents {
+			names, authoritative := refreshed[skill.Source][agent]
+			if !authoritative {
+				continue
+			}
+			if _, present := names[skill.Name]; present {
+				continue
+			}
+			if len(unknownAll) > 0 || unresolved[skill.Name] {
+				state.Skills = append(state.Skills, SkillState{Source: skill.Source, Name: skill.Name, Agents: []string{agent}})
+				continue
+			}
+			if _, desiredElsewhere := desired[skill.Name][agent]; desiredElsewhere {
+				continue
+			}
+			id := skillID{source: skill.Source, name: skill.Name}
+			if removals[id] == nil {
+				removals[id] = make(map[string]struct{})
+			}
+			removals[id][agent] = struct{}{}
+		}
+	}
+
+	ids := make([]skillID, 0, len(removals))
+	for id := range removals {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		if ids[i].source != ids[j].source {
+			return ids[i].source < ids[j].source
+		}
+		return ids[i].name < ids[j].name
+	})
+
+	for _, id := range ids {
+		agents := sortedSetKeys(removals[id])
+		sharedDesired := false
+		var repairs []SkillState
+		for _, agent := range sortedSetKeys(desired[id.name]) {
+			if !nativeSkillAgent(agent) {
+				sharedDesired = true
+				continue
+			}
+
+			var repairSource string
+			for installedID, installedAgents := range installed {
+				if installedID.name != id.name {
+					continue
+				}
+				if _, ok := installedAgents[agent]; ok && installedID.source > repairSource {
+					// Sources install in sorted order. Restore the last source
+					// so the same content wins when sources share a skill name.
+					repairSource = installedID.source
+				}
+			}
+			if repairSource == "" {
+				sharedDesired = true
+				continue
+			}
+
+			repairs = append(repairs, SkillState{Source: repairSource, Name: id.name, Agents: []string{agent}})
+		}
+		if !sharedDesired {
+			agents = nil
+		}
+
+		label := "  -> skills prune " + id.name + " " + id.source
+		err := o.reporter.ProgressStep(label, func() error {
+			return o.skillsManager.Remove([]string{id.name}, agents)
+		})
+		if err != nil {
+			o.reporter.Warning(fmt.Sprintf("failed to prune upstream-deleted skill %q from %q: %v", id.name, id.source, err))
+			state.Skills = append(state.Skills, SkillState{Source: id.source, Name: id.name, Agents: sortedSetKeys(removals[id])})
+			continue
+		}
+		o.reporter.Success(fmt.Sprintf("removed upstream-deleted skill %q from %s", id.name, id.source))
+
+		if sharedDesired {
+			continue
+		}
+		for _, repair := range mergeSkillState(repairs) {
+			label := "  -> skills restore " + repair.Name + " " + strings.Join(repair.Agents, ",")
+			if err := o.reporter.ProgressStep(label, func() error {
+				_, err := o.skillsManager.Install(repair.Source, []string{repair.Name}, repair.Agents)
+				return err
+			}); err != nil {
+				o.reporter.Warning(fmt.Sprintf("failed to restore desired native skill %q from %q: %v", repair.Name, repair.Source, err))
 			}
 		}
 	}

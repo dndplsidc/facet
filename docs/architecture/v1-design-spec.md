@@ -568,7 +568,7 @@ AI skill reconciliation is stateful: when a previously managed source is removed
 or narrowed on a later apply, facet removes only the no-longer-declared skills
 for the affected agents before recording the new state.
 
-Codex and Cursor consume shared storage at `~/.agents/skills`. Fully removed
+Codex, Cursor, and Pi consume shared storage at `~/.agents/skills`. Fully removed
 Facet-managed skills are grouped by source and removed through `npx skills
 remove <names> -g -y` without agent filters. Removal applies to those skill names
 across all agents supported by the CLI, including consumers outside the profile
@@ -581,7 +581,7 @@ project-local skills in the caller's working directory.
 
 If a skill remains desired by a shared agent, removal uses the complete dropped
 agent set and retains shared storage. Unknown agent types conservatively retain
-shared storage as well. An agent reduction leaving only Claude Code and/or Pi
+shared storage as well. An agent reduction leaving only Claude Code
 uses a global removal followed by native-only installation with `--copy`.
 Native-only installs always use copies; shared-agent installs cannot avoid
 `.agents/skills` via `--copy`.
@@ -599,19 +599,31 @@ in its supplied previous state so the caller can retry them. Agent-scoped
 removals still rely on CLI exit status; the global absence check does not apply
 while a shared copy remains desired.
 
-Post-install verification intersects source-matching lock entries with `skills
+Named-install verification intersects source-matching lock entries with `skills
 list -g --json`, which also recognizes native copies. Stale lock-only entries
 are excluded from new Facet state. Missing names warn; unreadable verification
-falls back to requested names for named installs and warns without inferring
-names for all-source installs. Historical remnants already absent from Facet
+falls back to requested names for named installs. All-source installs use fresh
+structured installation results; sources without JSON support retain legacy
+lock and inventory verification. Historical remnants already absent from Facet
 state require explicit cleanup and are not globally pruned.
+
+All-source reconciliation uses structured results from `skills add --json` to
+identify the names supplied by the current installation. The accumulated global
+lock is not an upstream inventory. Only a complete, nonempty successful result
+can authorize upstream-deletion cleanup. Compare it against previous Facet
+ownership, account for other desired sources and agents, and remove absent
+names through the CLI. Preserve previous ownership on installation or parsing
+failure and preserve failed removals for retry. A source with no valid skills
+is treated conservatively because the CLI reports it as an error. Unsupported
+JSON source formats retain legacy installation with a warning and no upstream
+pruning. Explicit skill selections keep their existing verification behavior.
 
 The hermetic mock E2E suites cover reconciliation and retry behavior. A separate
 `make test-skills-integration` gate runs the actual Facet binary with the pinned
-skills CLI 1.5.25, an isolated home, and a local Git fixture accessed through URL
+skills CLI 1.7.4, an isolated home, and a local Git fixture accessed through URL
 rewriting. It verifies shared-directory and lock deletion with Cline detected,
 native-copy transitions, dangling links, stale metadata, unrelated-skill
-preservation, repeated apply/update, and XDG lock paths. CI runs it on macOS and
+preservation, upstream deletion, repeated apply/update, and XDG lock paths. CI runs it on macOS and
 Linux; set `FACET_SKILLS_CLI` to the installed package's `bin/cli.mjs` to run locally.
 
 ---

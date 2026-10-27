@@ -6,6 +6,17 @@ import (
 	"testing"
 )
 
+func TestOutput_PreservesFailureResponse(t *testing.T) {
+	output, err := New().Output("sh", "-c", `printf '[{"status":"failed"}]'; printf 'diagnostic' >&2; exit 1`)
+	if string(output) != `[{"status":"failed"}]` {
+		t.Fatalf("expected structured stdout without stderr, got %q", output)
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+		t.Fatalf("expected preserved exit status 1, got %v", err)
+	}
+}
+
 func TestRunInteractive_Success(t *testing.T) {
 	r := New()
 	err := r.RunInteractive("echo", "hello")

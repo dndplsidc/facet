@@ -43,6 +43,7 @@ ai:
   agents: [claude-code, codex, cursor, pi]
   skills:
     - source: other/repo
+      skills: [unrelated]
 YAML
 echo '[]' > "$HOME/.mock-skills-inventory.json"
 facet_apply work

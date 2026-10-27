@@ -19,7 +19,7 @@ func New() *Runner {
 func (r *Runner) Output(name string, args ...string) ([]byte, error) {
 	output, err := exec.Command(name, args...).Output()
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", name, err)
+		return output, fmt.Errorf("%s: %w", name, err)
 	}
 	return output, nil
 }

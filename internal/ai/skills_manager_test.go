@@ -13,7 +13,7 @@ import (
 func TestNPXSkillsManager_StaleLockIsNotInstalled(t *testing.T) {
 	lockPath := filepath.Join(t.TempDir(), ".skill-lock.json")
 	require.NoError(t, os.WriteFile(lockPath, []byte(`{"skills":{"stale":{"source":"org/repo"},"native-copy":{"source":"org/repo"}}}`), 0o600))
-	runner := &mockRunner{output: []byte(`[{"name":"native-copy","path":"/isolated/.pi/agent/skills/native-copy"}]`)}
+	runner := &mockRunner{output: []byte(`[{"name":"native-copy","path":"/isolated/.claude/skills/native-copy"}]`)}
 	mgr := NewNPXSkillsManager(runner, lockPath)
 	names, err := mgr.InstalledForSource("org/repo")
 	require.NoError(t, err)
@@ -46,12 +46,15 @@ func TestNPXSkillsManager_NativeOnlyUsesCopy(t *testing.T) {
 		agents []string
 		copy   bool
 	}{
-		{[]string{"claude-code", "pi"}, true},
+		{[]string{"claude-code"}, true},
+		{[]string{"pi"}, false},
+		{[]string{"claude-code", "pi"}, false},
 		{[]string{"codex", "cursor"}, false},
 		{[]string{"claude-code", "codex", "pi"}, false},
 	} {
 		runner := &mockRunner{}
-		require.NoError(t, NewNPXSkillsManager(runner, "").Install("org/repo", []string{"example"}, tc.agents))
+		_, err := NewNPXSkillsManager(runner, "").Install("org/repo", []string{"example"}, tc.agents)
+		require.NoError(t, err)
 		require.Equal(t, tc.copy, contains(runner.commands[1], "--copy"))
 	}
 }
@@ -60,7 +63,7 @@ func TestNPXSkillsManager_Install_ChecksNPX(t *testing.T) {
 	runner := &mockRunner{}
 	mgr := NewNPXSkillsManager(runner, "")
 
-	err := mgr.Install("@my-org/skills", []string{"skill-a", "skill-b"}, []string{"claude-code", "codex"})
+	_, err := mgr.Install("@my-org/skills", []string{"skill-a", "skill-b"}, []string{"claude-code", "codex"})
 	if err != nil {
 		t.Fatalf("Install returned unexpected error: %v", err)
 	}
@@ -83,7 +86,7 @@ func TestNPXSkillsManager_Install_NPXNotFound(t *testing.T) {
 	runner := &mockRunner{err: errors.New("command not found")}
 	mgr := NewNPXSkillsManager(runner, "")
 
-	err := mgr.Install("@my-org/skills", []string{"skill-a"}, []string{"claude-code"})
+	_, err := mgr.Install("@my-org/skills", []string{"skill-a"}, []string{"claude-code"})
 	if err == nil {
 		t.Fatal("expected error when npx not found, got nil")
 	}
@@ -97,8 +100,8 @@ func TestNPXSkillsManager_Install_NPXCheckRunsOnce(t *testing.T) {
 	runner := &mockRunner{}
 	mgr := NewNPXSkillsManager(runner, "")
 
-	_ = mgr.Install("@org/a", []string{"s1"}, []string{"claude-code"})
-	_ = mgr.Install("@org/b", []string{"s2"}, []string{"cursor"})
+	_, _ = mgr.Install("@org/a", []string{"s1"}, []string{"claude-code"})
+	_, _ = mgr.Install("@org/b", []string{"s2"}, []string{"cursor"})
 
 	// npx --version should appear only once (first call), then 2 install commands.
 	if len(runner.commands) != 3 {
@@ -176,7 +179,7 @@ func TestNPXSkillsManager_Install_PreservesArgumentBoundaries(t *testing.T) {
 
 	mgr := NewNPXSkillsManager(execrunner.New(), "")
 
-	if err := mgr.Install("/tmp/skills repo", []string{"skill-a"}, []string{"claude-code"}); err != nil {
+	if _, err := mgr.Install("/tmp/skills repo", []string{"skill-a"}, []string{"claude-code"}); err != nil {
 		t.Fatalf("Install returned error: %v", err)
 	}
 
@@ -215,7 +218,7 @@ func TestNPXSkillsManager_Install_NPXCheckOK_InstallFails(t *testing.T) {
 	}
 	mgr := NewNPXSkillsManager(runner, "")
 
-	err := mgr.Install("@my-org/skills", []string{"skill-a"}, []string{"claude-code"})
+	_, err := mgr.Install("@my-org/skills", []string{"skill-a"}, []string{"claude-code"})
 	if err == nil {
 		t.Fatal("expected error when install fails, got nil")
 	}
@@ -369,10 +372,10 @@ func TestNPXSkillsManager_Update_NPXNotFound(t *testing.T) {
 }
 
 func TestNPXSkillsManager_Install_AllSkillsUsesSkillWildcardWithoutAllAgentShortcut(t *testing.T) {
-	runner := &mockRunner{}
+	runner := &mockRunner{output: []byte(`[{"name":"example","status":"installed","agents":["claude-code","cursor","pi"]}]`)}
 	mgr := NewNPXSkillsManager(runner, "")
 
-	err := mgr.Install("@my-org/skills", nil, []string{"claude-code", "cursor", "pi"})
+	_, err := mgr.Install("@my-org/skills", nil, []string{"claude-code", "cursor", "pi"})
 	if err != nil {
 		t.Fatalf("Install returned unexpected error: %v", err)
 	}
@@ -381,22 +384,22 @@ func TestNPXSkillsManager_Install_AllSkillsUsesSkillWildcardWithoutAllAgentShort
 		t.Fatalf("expected 2 commands, got %d: %v", len(runner.commands), runner.commands)
 	}
 
-	want := "npx skills add @my-org/skills --skill * -a claude-code -a cursor -a pi -g -y"
+	want := "npx skills add @my-org/skills --skill * -a claude-code -a cursor -a pi -g -y --json"
 	if runner.commands[1] != want {
 		t.Errorf("unexpected install command:\n  got:  %q\n  want: %q", runner.commands[1], want)
 	}
 }
 
 func TestNPXSkillsManager_Install_AllSkillsEmptySliceUsesSkillWildcard(t *testing.T) {
-	runner := &mockRunner{}
+	runner := &mockRunner{output: []byte(`[{"name":"example","status":"installed","agents":["claude-code"]}]`)}
 	mgr := NewNPXSkillsManager(runner, "")
 
-	err := mgr.Install("@my-org/skills", []string{}, []string{"claude-code"})
+	_, err := mgr.Install("@my-org/skills", []string{}, []string{"claude-code"})
 	if err != nil {
 		t.Fatalf("Install returned unexpected error: %v", err)
 	}
 
-	want := "npx skills add @my-org/skills --skill * -a claude-code -g -y --copy"
+	want := "npx skills add @my-org/skills --skill * -a claude-code -g -y --copy --json"
 	if runner.commands[1] != want {
 		t.Errorf("unexpected install command:\n  got:  %q\n  want: %q", runner.commands[1], want)
 	}
@@ -454,5 +457,76 @@ func TestNPXSkillsManager_InstalledForSource_MissingLockFile(t *testing.T) {
 	}
 	if got != nil {
 		t.Fatalf("expected nil skills for missing lock file, got %#v", got)
+	}
+}
+
+type jsonInstallRunner struct {
+	sequentialMockRunner
+	output []byte
+}
+
+func (r *jsonInstallRunner) Output(name string, args ...string) ([]byte, error) {
+	return r.output, r.Run(name, args...)
+}
+
+func TestNPXSkillsManager_AllSourceInstallRequiresCompleteCurrentResults(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		output  string
+		runErr  error
+		want    []string
+		wantErr bool
+	}{
+		{"current names", `[{"name":"current","status":"installed","agents":["Claude Code","Codex"]}]`, nil, []string{"current"}, false},
+		{"malformed", `not JSON`, nil, nil, true},
+		{"empty", `[]`, nil, nil, true},
+		{"null", `null`, nil, nil, true},
+		{"partial", `[{"name":"current","status":"installed","agents":["Claude Code","Codex"]},{"name":"failed","status":"failed"}]`, nil, nil, true},
+		{"skipped", `[{"name":"current","status":"skipped"}]`, nil, nil, true},
+		{"missing name", `[{"status":"installed","agents":["Claude Code","Codex"]}]`, nil, nil, true},
+		{"missing agent", `[{"name":"current","status":"installed","agents":["Claude Code"]}]`, nil, nil, true},
+		{"duplicate agent", `[{"name":"current","status":"installed","agents":["Claude Code","Claude Code"]}]`, nil, nil, true},
+		{"duplicate skill", `[{"name":"current","status":"installed","agents":["Claude Code","Codex"]},{"name":"current","status":"installed","agents":["Claude Code","Codex"]}]`, nil, nil, true},
+		{"command failed", `[{"name":"current","status":"installed","agents":["Claude Code","Codex"]}]`, errors.New("install failed after writes"), nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &jsonInstallRunner{
+				sequentialMockRunner: sequentialMockRunner{errors: []error{nil, tc.runErr}},
+				output:               []byte(tc.output),
+			}
+			result, err := NewNPXSkillsManager(runner, "").Install("org/repo", nil, []string{"claude-code", "codex"})
+			require.Equal(t, tc.wantErr, err != nil)
+			require.Equal(t, tc.want, result.Names)
+			require.Len(t, runner.commands, 2, "a failed mutating install must not be retried")
+		})
+	}
+}
+
+func TestNPXSkillsManager_WellKnownFallbackRequiresExactPreInstallRejection(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		output string
+		legacy bool
+	}{
+		{"unsupported before mutation", `[{"status":"failed","error":"--json is not yet supported for well-known skill sources."}]`, true},
+		{"other failure", `[{"status":"failed","error":"network failure"}]`, false},
+		{"failure after install", `[{"name":"example","status":"failed","error":"--json is not yet supported for well-known skill sources."}]`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &jsonInstallRunner{
+				sequentialMockRunner: sequentialMockRunner{errors: []error{nil, errors.New("exit 1"), nil}},
+				output:               []byte(tc.output),
+			}
+			result, err := NewNPXSkillsManager(runner, "").Install("https://skills.example.test", nil, []string{"codex"})
+			require.Empty(t, result.Names)
+			if tc.legacy {
+				require.NoError(t, err)
+				require.Len(t, runner.commands, 3)
+				require.NotContains(t, runner.commands[2], "--json")
+			} else {
+				require.Error(t, err)
+				require.Len(t, runner.commands, 2)
+			}
+		})
 	}
 }
